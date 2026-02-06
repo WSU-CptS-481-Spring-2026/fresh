@@ -2423,6 +2423,136 @@ pub fn action_to_events(
             }
         }
 
+        Action::MoveLineUp => {
+            // Move current line up by swapping with the line above
+            // Phase 1: collect cursor info
+            let cursor_data: Vec<_> = state
+                .cursors
+                .iter()
+                .map(|(cursor_id, cursor)| (cursor_id, cursor.position))
+                .collect();
+
+            let line_ending = state.buffer.line_ending().as_str().to_string();
+            let buffer_len = state.buffer.len();
+
+            for (cursor_id, position) in cursor_data {
+                let line_num = state.buffer.get_line_number(position);
+                if line_num == 0 {
+                    continue;
+                }
+
+                let mut iter = state
+                    .buffer
+                    .line_iterator(position, estimated_line_length);
+                let curr_line_start = iter.current_position();
+                let curr_content = match iter.next_line() {
+                    Some((_, c)) => c,
+                    None => continue,
+                };
+                let curr_line_end = curr_line_start + curr_content.len();
+
+                let prev_start = match state.buffer.line_start_offset(line_num - 1) {
+                    Some(s) => s,
+                    None => continue,
+                };
+
+                let prev_text = state.get_text_range(prev_start, curr_line_start);
+                let curr_text = state.get_text_range(curr_line_start, curr_line_end);
+                let full_text = state.get_text_range(prev_start, curr_line_end);
+
+                let curr_trimmed = curr_text.trim_end_matches(LINE_ENDING_CHARS);
+                let prev_trimmed = prev_text.trim_end_matches(LINE_ENDING_CHARS);
+
+                let new_text = if curr_line_end >= buffer_len {
+                    format!("{}{}{}", curr_trimmed, &line_ending, prev_trimmed)
+                } else {
+                    format!(
+                        "{}{}{}{}",
+                        curr_trimmed, &line_ending, prev_trimmed, &line_ending
+                    )
+                };
+
+                events.push(Event::Delete {
+                    range: prev_start..curr_line_end,
+                    deleted_text: full_text,
+                    cursor_id,
+                });
+                events.push(Event::Insert {
+                    position: prev_start,
+                    text: new_text,
+                    cursor_id,
+                });
+            }
+        }
+
+        Action::MoveLineDown => {
+            // Move current line down by swapping with the line below
+            // Phase 1: collect cursor info
+            let cursor_data: Vec<_> = state
+                .cursors
+                .iter()
+                .map(|(cursor_id, cursor)| (cursor_id, cursor.position))
+                .collect();
+
+            let line_ending = state.buffer.line_ending().as_str().to_string();
+            let total_lines = state.buffer.line_count().unwrap_or(1);
+            let buffer_len = state.buffer.len();
+
+            for (cursor_id, position) in cursor_data {
+                let line_num = state.buffer.get_line_number(position);
+                if line_num + 1 >= total_lines {
+                    continue;
+                }
+
+                let mut iter = state
+                    .buffer
+                    .line_iterator(position, estimated_line_length);
+                let curr_line_start = iter.current_position();
+                let curr_content = match iter.next_line() {
+                    Some((_, c)) => c,
+                    None => continue,
+                };
+                let curr_line_end = curr_line_start + curr_content.len();
+
+                let mut next_iter = state
+                    .buffer
+                    .line_iterator(curr_line_end, estimated_line_length);
+                let _next_line_start = next_iter.current_position();
+                let next_content = match next_iter.next_line() {
+                    Some((_, c)) => c,
+                    None => continue,
+                };
+                let next_line_end = _next_line_start + next_content.len();
+
+                let curr_text = state.get_text_range(curr_line_start, curr_line_end);
+                let next_text = state.get_text_range(curr_line_end, next_line_end);
+                let full_text = state.get_text_range(curr_line_start, next_line_end);
+
+                let curr_trimmed = curr_text.trim_end_matches(LINE_ENDING_CHARS);
+                let next_trimmed = next_text.trim_end_matches(LINE_ENDING_CHARS);
+
+                let new_text = if next_line_end >= buffer_len {
+                    format!("{}{}{}", next_trimmed, &line_ending, curr_trimmed)
+                } else {
+                    format!(
+                        "{}{}{}{}",
+                        next_trimmed, &line_ending, curr_trimmed, &line_ending
+                    )
+                };
+
+                events.push(Event::Delete {
+                    range: curr_line_start..next_line_end,
+                    deleted_text: full_text,
+                    cursor_id,
+                });
+                events.push(Event::Insert {
+                    position: curr_line_start,
+                    text: new_text,
+                    cursor_id,
+                });
+            }
+        }
+
         Action::Recenter => {
             // Scroll so that the cursor is centered in the view
             // This is handled specially - we emit a Recenter event

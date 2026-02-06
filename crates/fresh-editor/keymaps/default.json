@@ -455,6 +455,20 @@
     },
     {
       "key": "Up",
+      "modifiers": ["alt"],
+      "action": "move_line_up",
+      "args": {},
+      "when": "normal"
+    },
+    {
+      "key": "Down",
+      "modifiers": ["alt"],
+      "action": "move_line_down",
+      "args": {},
+      "when": "normal"
+    },
+    {
+      "key": "Up",
       "modifiers": ["alt", "shift"],
       "action": "block_select_up",
       "args": {},

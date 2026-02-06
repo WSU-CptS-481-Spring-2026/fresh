@@ -400,6 +400,22 @@ pub fn get_all_commands() -> Vec<Command> {
             source: CommandSource::Builtin,
         },
         Command {
+            name: t!("cmd.move_line_up").to_string(),
+            description: t!("cmd.move_line_up_desc").to_string(),
+            action: Action::MoveLineUp,
+            contexts: vec![KeyContext::Normal],
+            custom_contexts: vec![],
+            source: CommandSource::Builtin,
+        },
+        Command {
+            name: t!("cmd.move_line_down").to_string(),
+            description: t!("cmd.move_line_down_desc").to_string(),
+            action: Action::MoveLineDown,
+            contexts: vec![KeyContext::Normal],
+            custom_contexts: vec![],
+            source: CommandSource::Builtin,
+        },
+        Command {
             name: t!("cmd.recenter").to_string(),
             description: t!("cmd.recenter_desc").to_string(),
             action: Action::Recenter,

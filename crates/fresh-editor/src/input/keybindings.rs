@@ -297,6 +297,8 @@ pub enum Action {
     TransposeChars,
     OpenLine,
     DuplicateLine,
+    MoveLineUp,
+    MoveLineDown,
 
     // View
     Recenter,
@@ -663,6 +665,8 @@ impl Action {
             "transpose_chars" => Self::TransposeChars,
             "open_line" => Self::OpenLine,
             "duplicate_line" => Self::DuplicateLine,
+            "move_line_up" => Self::MoveLineUp,
+            "move_line_down" => Self::MoveLineDown,
             "recenter" => Self::Recenter,
             "set_mark" => Self::SetMark,
 
@@ -980,6 +984,8 @@ impl Action {
                 | Action::TransposeChars
                 | Action::OpenLine
                 | Action::DuplicateLine
+                | Action::MoveLineUp
+                | Action::MoveLineDown
                 // Clipboard editing (but not Copy)
                 | Action::Cut
                 | Action::Paste
@@ -1007,6 +1013,8 @@ impl Action {
                 | Action::TransposeChars
                 | Action::OpenLine
                 | Action::DuplicateLine
+                | Action::MoveLineUp
+                | Action::MoveLineDown
                 | Action::Cut
                 | Action::Paste
         )
@@ -1736,6 +1744,8 @@ impl KeybindingResolver {
             Action::TransposeChars => t!("action.transpose_chars"),
             Action::OpenLine => t!("action.open_line"),
             Action::DuplicateLine => t!("action.duplicate_line"),
+            Action::MoveLineUp => t!("action.move_line_up"),
+            Action::MoveLineDown => t!("action.move_line_down"),
             Action::Recenter => t!("action.recenter"),
             Action::SetMark => t!("action.set_mark"),
             Action::Copy => t!("action.copy"),
