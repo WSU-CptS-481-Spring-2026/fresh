@@ -908,6 +908,7 @@
   "menu.view.calibrate_input": "Calibrer le clavier...",
   "menu.view.close_split": "Fermer la division",
   "menu.view.file_explorer": "Explorateur de fichiers",
+  "menu.view.recent_files": "Fichiers récents",
   "menu.view.focus_next_split": "Division suivante",
   "menu.view.focus_prev_split": "Division précédente",
   "menu.view.keybinding_default": "Par défaut",

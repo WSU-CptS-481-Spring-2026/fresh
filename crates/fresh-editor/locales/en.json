@@ -907,6 +907,7 @@
   "menu.view": "View",
   "menu.view.close_split": "Close Split",
   "menu.view.file_explorer": "File Explorer",
+  "menu.view.recent_files": "Recent Files",
   "menu.view.focus_next_split": "Focus Next Split",
   "menu.view.focus_prev_split": "Focus Previous Split",
   "menu.view.keybinding_default": "Default",

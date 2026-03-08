@@ -908,6 +908,7 @@
   "menu.view.calibrate_input": "키보드 보정...",
   "menu.view.close_split": "분할 닫기",
   "menu.view.file_explorer": "파일 탐색기",
+  "menu.view.recent_files": "최근 파일",
   "menu.view.focus_next_split": "다음 분할로 이동",
   "menu.view.focus_prev_split": "이전 분할로 이동",
   "menu.view.keybinding_default": "기본",

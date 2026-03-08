@@ -907,6 +907,7 @@
   "menu.view": "Xem",
   "menu.view.close_split": "Đóng chia màn hình",
   "menu.view.file_explorer": "Trình duyệt tệp",
+  "menu.view.recent_files": "Tệp gần đây",
   "menu.view.focus_next_split": "Focus chia màn hình tiếp theo",
   "menu.view.focus_prev_split": "Focus chia màn hình trước đó",
   "menu.view.keybinding_default": "Mặc định",

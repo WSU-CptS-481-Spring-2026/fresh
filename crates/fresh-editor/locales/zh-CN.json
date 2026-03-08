@@ -908,6 +908,7 @@
   "menu.view.calibrate_input": "校准键盘...",
   "menu.view.close_split": "关闭分割",
   "menu.view.file_explorer": "文件资源管理器",
+  "menu.view.recent_files": "最近使用的文件",
   "menu.view.focus_next_split": "聚焦下一个分割",
   "menu.view.focus_prev_split": "聚焦上一个分割",
   "menu.view.keybinding_default": "默认",

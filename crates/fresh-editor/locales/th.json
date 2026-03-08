@@ -908,6 +908,7 @@
   "menu.view.calibrate_input": "ปรับเทียบแป้นพิมพ์...",
   "menu.view.close_split": "ปิดการแบ่ง",
   "menu.view.file_explorer": "โปรแกรมสำรวจไฟล์",
+  "menu.view.recent_files": "ไฟล์ที่ใช้ล่าสุด",
   "menu.view.focus_next_split": "โฟกัสการแบ่งถัดไป",
   "menu.view.focus_prev_split": "โฟกัสการแบ่งก่อนหน้า",
   "menu.view.keybinding_default": "ค่าเริ่มต้น",

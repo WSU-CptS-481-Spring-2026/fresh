@@ -908,6 +908,7 @@
   "menu.view.calibrate_input": "Tastatur kalibrieren...",
   "menu.view.close_split": "Teilung schließen",
   "menu.view.file_explorer": "Datei-Explorer",
+  "menu.view.recent_files": "Kürzlich geöffnete Dateien", 
   "menu.view.focus_next_split": "Nächste Teilung",
   "menu.view.focus_prev_split": "Vorherige Teilung",
   "menu.view.keybinding_default": "Standard",

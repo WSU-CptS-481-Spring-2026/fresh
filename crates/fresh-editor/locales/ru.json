@@ -908,6 +908,7 @@
   "menu.view.calibrate_input": "Калибровка клавиатуры...",
   "menu.view.close_split": "Закрыть разделение",
   "menu.view.file_explorer": "Проводник файлов",
+  "menu.view.recent_files": "Недавние файлы",
   "menu.view.focus_next_split": "Следующее разделение",
   "menu.view.focus_prev_split": "Предыдущее разделение",
   "menu.view.keybinding_default": "По умолчанию",

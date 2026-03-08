@@ -908,6 +908,7 @@
   "menu.view.calibrate_input": "Калібрувати клавіатуру...",
   "menu.view.close_split": "Закрити розділення",
   "menu.view.file_explorer": "Провідник файлів",
+  "menu.view.recent_files": "Нещодавно відкриті файли",
   "menu.view.focus_next_split": "Наступне розділення",
   "menu.view.focus_prev_split": "Попереднє розділення",
   "menu.view.keybinding_default": "За замовчуванням",

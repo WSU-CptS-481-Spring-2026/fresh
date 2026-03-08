@@ -908,6 +908,7 @@
   "menu.view.calibrate_input": "Calibra Tastiera...",
   "menu.view.close_split": "Chiudi Divisione",
   "menu.view.file_explorer": "Esplora File",
+  "menu.view.recent_files": "File Recenti",
   "menu.view.focus_next_split": "Focus Prossima Divisione",
   "menu.view.focus_prev_split": "Focus Divisione Precedente",
   "menu.view.keybinding_default": "Predefinito",
