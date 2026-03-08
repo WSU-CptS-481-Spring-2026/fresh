@@ -147,11 +147,10 @@ impl Viewport {
     /// Calculate the gutter width based on buffer length
     /// Format: "[indicator]{:>N} │ " where N is the number of digits for line numbers
     /// - Indicator column: 1 char (space, or symbols like ●/✗/⚠)
-    /// - Line numbers: N digits (min 4), right-aligned
+    /// - Line numbers: N digits, right-aligned (scales with line count: 1–9 → 1 digit, 10–99 → 2, etc.)
     /// - Separator: " │ " = 3 chars (space, box char, space)
     ///
-    /// Total width = 1 + N + 3 = N + 4 (where N >= 4 minimum, so min 8 total)
-    /// This is a heuristic using the configured estimated line length
+    /// Total width = 1 + N + 3 = N + 4 (where N >= 1 minimum for empty files)
     pub fn gutter_width(&self, buffer: &Buffer) -> usize {
         let byte_offset_mode = buffer.line_count().is_none();
         let gutter_estimate = if byte_offset_mode {
@@ -165,8 +164,8 @@ impl Viewport {
         } else {
             ((gutter_estimate as f64).log10().floor() as usize) + 1
         };
-        // 1 (indicator) + minimum 4 digits for readability + 3 (" │ ")
-        1 + digits.max(4) + 3
+        // 1 (indicator) + digits (min 1 for empty buffer) + 3 (" │ ")
+        1 + digits.max(1) + 3
     }
 
     /// Scroll up by N lines (byte-based)

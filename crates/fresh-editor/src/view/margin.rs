@@ -152,7 +152,7 @@ impl MarginConfig {
     pub fn left_default() -> Self {
         Self {
             position: MarginPosition::Left,
-            width: 4, // Minimum 4 digits for line numbers
+            width: 1, // Min 1 digit; update_width_for_buffer sets actual from line count
             enabled: true,
             show_separator: true,
             separator: " │ ".to_string(), // Separator with spaces: " │ " (space before for indicators, space after for readability)
@@ -579,6 +579,7 @@ impl MarginManager {
     }
 
     /// Update the left margin width based on buffer size.
+    /// Width scales with line count: 1–9 lines → 1 digit, 10–99 → 2 digits, 100–999 → 3, etc.
     /// Only adjusts width when `show_line_numbers` is true.
     pub fn update_width_for_buffer(&mut self, buffer_total_lines: usize, show_line_numbers: bool) {
         if show_line_numbers {
@@ -587,7 +588,7 @@ impl MarginManager {
             } else {
                 ((buffer_total_lines as f64).log10().floor() as usize) + 1
             };
-            self.left_config.width = digits.max(4);
+            self.left_config.width = digits.max(1);
         }
     }
 
@@ -607,7 +608,8 @@ impl MarginManager {
     /// This adjusts `left_config.enabled` and `left_config.width` so that
     /// `left_total_width()` returns the correct gutter size for the given
     /// `show_line_numbers` setting. Called at render time with the per-split
-    /// line number state.
+    /// line number state. When enabling, width defaults to 1 until
+    /// `update_width_for_buffer` sets it from the actual line count.
     pub fn configure_for_line_numbers(&mut self, show_line_numbers: bool) {
         if !show_line_numbers {
             self.left_config.width = 0;
@@ -615,7 +617,7 @@ impl MarginManager {
         } else {
             self.left_config.enabled = true;
             if self.left_config.width == 0 {
-                self.left_config.width = 4;
+                self.left_config.width = 1; // Min 1 digit; update_width_for_buffer will set actual
             }
         }
     }
@@ -731,19 +733,27 @@ mod tests {
     fn test_margin_manager_update_width() {
         let mut manager = MarginManager::new();
 
-        // Small buffer
-        manager.update_width_for_buffer(99, true);
-        assert_eq!(manager.left_config.width, 4); // Minimum 4
+        // 1–9 lines: 1 digit
+        manager.update_width_for_buffer(9, true);
+        assert_eq!(manager.left_config.width, 1);
 
-        // Medium buffer (4 digits)
+        // 10–99 lines: 2 digits
+        manager.update_width_for_buffer(99, true);
+        assert_eq!(manager.left_config.width, 2);
+
+        // 100–999 lines: 3 digits
+        manager.update_width_for_buffer(100, true);
+        assert_eq!(manager.left_config.width, 3);
+
+        // 1000–9999: 4 digits
         manager.update_width_for_buffer(1000, true);
         assert_eq!(manager.left_config.width, 4);
 
-        // Large buffer (5 digits)
+        // 10000–99999: 5 digits
         manager.update_width_for_buffer(10000, true);
         assert_eq!(manager.left_config.width, 5);
 
-        // Very large buffer (7 digits)
+        // 1000000: 7 digits
         manager.update_width_for_buffer(1000000, true);
         assert_eq!(manager.left_config.width, 7);
     }
