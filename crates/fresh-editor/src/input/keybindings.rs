@@ -472,6 +472,7 @@ pub enum Action {
 
     // File explorer operations
     ToggleFileExplorer,
+    ToggleRecentFiles,
     // Menu bar visibility
     ToggleMenuBar,
     // Tab bar visibility
@@ -802,6 +803,7 @@ impl Action {
             "popup_cancel" => Self::PopupCancel,
 
             "toggle_file_explorer" => Self::ToggleFileExplorer,
+            "toggle_recent_files" => Self::ToggleRecentFiles,
             "toggle_menu_bar" => Self::ToggleMenuBar,
             "toggle_tab_bar" => Self::ToggleTabBar,
             "focus_file_explorer" => Self::FocusFileExplorer,
@@ -1856,6 +1858,7 @@ impl KeybindingResolver {
             Action::PopupConfirm => t!("action.popup_confirm"),
             Action::PopupCancel => t!("action.popup_cancel"),
             Action::ToggleFileExplorer => t!("action.toggle_file_explorer"),
+            Action::ToggleRecentFiles => t!("action.toggle_recent_files"),
             Action::ToggleMenuBar => t!("action.toggle_menu_bar"),
             Action::ToggleTabBar => t!("action.toggle_tab_bar"),
             Action::FocusFileExplorer => t!("action.focus_file_explorer"),

@@ -1573,7 +1573,7 @@ impl MenuConfig {
                     },
                     MenuItem::Action {
                         label: t!("menu.view.recent_files").to_string(),
-                        action: "none".to_string(), // Placeholder - implement recent files menu later
+                        action: "toggle_recent_files".to_string(), // Placeholder - implement recent files menu later
                         args: HashMap::new(),
                         when: None,
                         checkbox: None,

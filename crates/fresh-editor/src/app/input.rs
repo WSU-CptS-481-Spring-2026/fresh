@@ -655,6 +655,7 @@ impl Editor {
             Action::DecreaseSplitSize => self.adjust_split_size(-0.05),
             Action::ToggleMaximizeSplit => self.toggle_maximize_split(),
             Action::ToggleFileExplorer => self.toggle_file_explorer(),
+            Action::ToggleRecentFiles => self.toggle_recent_files(),
             Action::ToggleMenuBar => self.toggle_menu_bar(),
             Action::ToggleTabBar => self.toggle_tab_bar(),
             Action::ToggleLineNumbers => self.toggle_line_numbers(),

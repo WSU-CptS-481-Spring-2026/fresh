@@ -68,6 +68,16 @@ impl Editor {
         }
     }
 
+    pub fn toggle_recent_files(&mut self) {
+        // For now, if file explorer is open, close file explorer.
+        if self.file_explorer_visible {
+            self.toggle_file_explorer();
+        }
+
+        // Placeholder for recent files menu implementation
+        self.set_status_message(t!("recent_files.not_implemented").to_string());
+    }
+
     pub fn show_file_explorer(&mut self) {
         if !self.file_explorer_visible {
             self.toggle_file_explorer();

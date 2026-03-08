@@ -2530,6 +2530,7 @@ pub fn action_to_events(
         | Action::PopupConfirm
         | Action::PopupCancel
         | Action::ToggleFileExplorer
+        | Action::ToggleRecentFiles
         | Action::ToggleMenuBar
         | Action::ToggleTabBar
         | Action::FocusFileExplorer
