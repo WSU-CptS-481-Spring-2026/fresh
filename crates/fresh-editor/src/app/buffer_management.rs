@@ -50,6 +50,15 @@ impl Editor {
 
         self.set_active_buffer(buffer_id);
 
+        // Record successful opens in recent files using the canonical path from buffer state.
+        if let Some(opened_path) = self
+            .buffers
+            .get(&buffer_id)
+            .and_then(|s| s.buffer.file_path().map(|p| p.to_path_buf()))
+        {
+            self.add_path_history(opened_path);
+        }
+
         // Use display_name from metadata for relative path display
         let display_name = self
             .buffer_metadata
@@ -348,6 +357,8 @@ impl Editor {
 
         self.set_active_buffer(buffer_id);
 
+        self.add_path_history(path.to_path_buf());
+
         let display_name = path.display().to_string();
         self.status_message = Some(t!("buffer.opened", name = display_name).to_string());
 
@@ -445,6 +456,8 @@ impl Editor {
         }
 
         self.set_active_buffer(buffer_id);
+
+        self.add_path_history(path.to_path_buf());
 
         Ok(buffer_id)
     }
@@ -573,6 +586,8 @@ impl Editor {
         }
 
         self.set_active_buffer(buffer_id);
+
+        self.add_path_history(path.to_path_buf());
 
         // Use display_name from metadata for relative path display
         let display_name = self

@@ -53,6 +53,8 @@ impl Editor {
     }
 
     pub fn toggle_file_explorer(&mut self) {
+        // Keep side panels mutually exclusive.
+        self.recent_files_panel_visible = false;
         self.file_explorer_visible = !self.file_explorer_visible;
 
         if self.file_explorer_visible {
@@ -68,14 +70,24 @@ impl Editor {
         }
     }
 
-    pub fn toggle_recent_files(&mut self) {
-        // For now, if file explorer is open, close file explorer.
-        if self.file_explorer_visible {
-            self.toggle_file_explorer();
-        }
+    pub fn get_most_recent_file(&self) -> Option<&PathBuf> {
+        self.recent_files.iter().rev().next()
+    }
 
-        // Placeholder for recent files menu implementation
-        self.set_status_message(t!("recent_files.not_implemented").to_string());
+    pub fn toggle_recent_files(&mut self) {
+        // Keep side panels mutually exclusive.
+        self.file_explorer_visible = false;
+        self.recent_files_panel_visible = !self.recent_files_panel_visible;
+
+        if self.recent_files_panel_visible {
+            self.key_context = KeyContext::FileExplorer;
+            self.recent_files_selected = 0;
+            self.recent_files_scroll_offset = 0;
+            self.set_status_message(format!("Recent files: {}", self.recent_files.len()));
+        } else {
+            self.key_context = KeyContext::Normal;
+            self.set_status_message("Recent files closed".to_string());
+        }
     }
 
     pub fn show_file_explorer(&mut self) {
@@ -187,6 +199,12 @@ impl Editor {
     }
 
     pub fn file_explorer_navigate_up(&mut self) {
+        if self.recent_files_panel_visible {
+            if self.recent_files_selected > 0 {
+                self.recent_files_selected -= 1;
+            }
+            return;
+        }
         if let Some(explorer) = &mut self.file_explorer {
             explorer.select_prev_match();
             explorer.update_scroll_for_selection();
@@ -194,6 +212,13 @@ impl Editor {
     }
 
     pub fn file_explorer_navigate_down(&mut self) {
+        if self.recent_files_panel_visible {
+            let total = self.recent_files.len();
+            if total > 0 {
+                self.recent_files_selected = (self.recent_files_selected + 1).min(total - 1);
+            }
+            return;
+        }
         if let Some(explorer) = &mut self.file_explorer {
             explorer.select_next_match();
             explorer.update_scroll_for_selection();
@@ -201,6 +226,11 @@ impl Editor {
     }
 
     pub fn file_explorer_page_up(&mut self) {
+        if self.recent_files_panel_visible {
+            let page = 10usize;
+            self.recent_files_selected = self.recent_files_selected.saturating_sub(page);
+            return;
+        }
         if let Some(explorer) = &mut self.file_explorer {
             explorer.select_page_up();
             explorer.update_scroll_for_selection();
@@ -208,6 +238,14 @@ impl Editor {
     }
 
     pub fn file_explorer_page_down(&mut self) {
+        if self.recent_files_panel_visible {
+            let total = self.recent_files.len();
+            if total > 0 {
+                let page = 10usize;
+                self.recent_files_selected = (self.recent_files_selected + page).min(total - 1);
+            }
+            return;
+        }
         if let Some(explorer) = &mut self.file_explorer {
             explorer.select_page_down();
             explorer.update_scroll_for_selection();
@@ -218,6 +256,9 @@ impl Editor {
     /// - If on expanded directory: collapse it
     /// - If on file or collapsed directory: select parent directory
     pub fn file_explorer_collapse(&mut self) {
+        if self.recent_files_panel_visible {
+            return;
+        }
         let Some(explorer) = &self.file_explorer else {
             return;
         };
@@ -244,6 +285,9 @@ impl Editor {
     }
 
     pub fn file_explorer_toggle_expand(&mut self) {
+        if self.recent_files_panel_visible {
+            return;
+        }
         let selected_id = if let Some(explorer) = &self.file_explorer {
             explorer.get_selected()
         } else {
@@ -346,7 +390,41 @@ impl Editor {
         }
     }
 
+    /// Adds a given path to the editor's recent files list
+    pub fn add_path_history(&mut self, path: PathBuf) {
+        // Remove then add the path, making the most recent path last in the list
+        self.recent_files.shift_remove(&path);
+        self.recent_files.insert(path);
+    }
+
+    /// Retrieves the list of recent files, ordered from most recent to least recent
+    pub fn get_recent_files(&mut self) -> Vec<PathBuf> {
+        self.recent_files.iter().rev().cloned().collect()
+    }
+
     pub fn file_explorer_open_file(&mut self) -> AnyhowResult<()> {
+        if self.recent_files_panel_visible {
+            if let Some(path) = self.get_recent_files().get(self.recent_files_selected).cloned() {
+                match self.open_file(&path) {
+                    Ok(_) => {
+                        self.focus_editor();
+                    }
+                    Err(e) => {
+                        if let Some(confirmation) =
+                            e.downcast_ref::<crate::model::buffer::LargeFileEncodingConfirmation>()
+                        {
+                            self.start_large_file_encoding_confirmation(confirmation);
+                        } else {
+                            self.set_status_message(
+                                t!("file.error_opening", error = e.to_string()).to_string(),
+                            );
+                        }
+                    }
+                }
+            }
+            return Ok(());
+        }
+
         let entry_type = self
             .file_explorer
             .as_ref()

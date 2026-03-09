@@ -41,6 +41,7 @@ pub mod workspace;
 use anyhow::Result as AnyhowResult;
 use rust_i18n::t;
 use std::path::Component;
+use indexmap::IndexSet;
 
 /// Normalize a path by resolving `.` and `..` components without requiring the path to exist.
 /// This is similar to canonicalize but works on paths that don't exist yet.
@@ -175,7 +176,7 @@ struct SemanticTokenFullRequest {
     kind: SemanticTokensFullRequestKind,
 }
 
-/// The main editor struct - manages multiple buffers, clipboard, and rendering
+/// The main editor struct - manages multiple buffers, clipboard, rendering, and file history
 pub struct Editor {
     /// All open buffers
     buffers: HashMap<BufferId, EditorState>,
@@ -701,6 +702,18 @@ pub struct Editor {
 
     /// Stdin streaming state (if reading from stdin)
     stdin_streaming: Option<StdinStreamingState>,
+
+    /// List of files opened by the editor
+    recent_files: IndexSet<PathBuf>,
+
+    /// Whether the recent files side panel is visible
+    recent_files_panel_visible: bool,
+
+    /// Selected index in the recent files panel (0-based, newest-first)
+    recent_files_selected: usize,
+
+    /// Scroll offset for the recent files panel list
+    recent_files_scroll_offset: usize,
 }
 
 /// A file that should be opened after the TUI starts
@@ -1080,6 +1093,10 @@ impl Editor {
         let user_config_raw = Config::read_user_config_raw(&working_dir);
 
         let mut editor = Editor {
+            recent_files: IndexSet::new(),
+            recent_files_panel_visible: false,
+            recent_files_selected: 0,
+            recent_files_scroll_offset: 0,
             buffers,
             event_logs,
             next_buffer_id: 1,
@@ -1812,7 +1829,9 @@ impl Editor {
     /// When the file explorer is visible, tabs only get a portion of the terminal width
     /// based on `file_explorer_width_percent`. This matches the layout calculation in render.rs.
     fn effective_tabs_width(&self) -> u16 {
-        if self.file_explorer_visible && self.file_explorer.is_some() {
+        if (self.file_explorer_visible && self.file_explorer.is_some())
+            || self.recent_files_panel_visible
+        {
             // When file explorer is visible, tabs get (1 - explorer_width) of the terminal width
             let editor_percent = 1.0 - self.file_explorer_width_percent;
             (self.terminal_width as f32 * editor_percent) as u16

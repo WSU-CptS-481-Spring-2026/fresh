@@ -2190,6 +2190,22 @@ impl Editor {
         // Focus file explorer
         self.key_context = crate::input::keybindings::KeyContext::FileExplorer;
 
+        // Recent Files panel reuses the same side-panel area and controls as file explorer.
+        if self.recent_files_panel_visible {
+            let relative_row = row.saturating_sub(explorer_area.y + 1); // +1 for top border
+            let recent_files = self.get_recent_files();
+            let clicked_index = (relative_row as usize) + self.recent_files_scroll_offset;
+
+            if clicked_index < recent_files.len() {
+                self.recent_files_selected = clicked_index;
+                if row > explorer_area.y {
+                    self.file_explorer_open_file()?;
+                }
+            }
+
+            return Ok(());
+        }
+
         // Calculate which item was clicked (accounting for border and title)
         // The file explorer has a 1-line border at top and bottom
         let relative_row = row.saturating_sub(explorer_area.y + 1); // +1 for top border
