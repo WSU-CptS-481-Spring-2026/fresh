@@ -187,12 +187,14 @@ impl Editor {
             // Note: if file_explorer is None but sync_in_progress is true,
             // we just leave the area blank (or could render a placeholder)
             } else {
-                // Render Recent Files panel
+                // Geometry Area for recent files panel
                 let area = horizontal_chunks[0];
                 let viewport_height = area.height.saturating_sub(2) as usize;
+                // Get recent files and total number of files
                 let recent_files = self.get_recent_files();
                 let total = recent_files.len();
 
+                // Adjust selected index and scroll offset to ensure selected item is visible
                 if total == 0 {
                     self.recent_files_selected = 0;
                     self.recent_files_scroll_offset = 0;
@@ -212,9 +214,11 @@ impl Editor {
                     }
                 }
 
+                // Get the slice of recent files to display based on scroll offset and viewport height
                 let visible_end = (self.recent_files_scroll_offset + viewport_height).min(total);
                 let visible = &recent_files[self.recent_files_scroll_offset..visible_end];
 
+                // Convert visible recent file paths to ListItems, stripping the working directory prefix for cleaner display
                 let items: Vec<ratatui::widgets::ListItem> = visible
                     .iter()
                     .map(|path| {
@@ -226,6 +230,7 @@ impl Editor {
                     })
                     .collect();
 
+                // Highlight the selected item if the file explorer is focused, otherwise just show a static list
                 let is_focused = self.key_context == KeyContext::FileExplorer;
                 let (title_style, border_style) = if is_focused {
                     (
@@ -242,6 +247,7 @@ impl Editor {
                     )
                 };
 
+                // Render the list of recent files with a border and title, and highlight the selected item if focused
                 let list = ratatui::widgets::List::new(items)
                     .block(
                         ratatui::widgets::Block::default()
@@ -259,6 +265,7 @@ impl Editor {
                         ratatui::style::Style::default().bg(self.theme.current_line_bg)
                     });
 
+                // Set the selected file if there are recent files to choose and selected index is within visible window
                 let mut list_state = ratatui::widgets::ListState::default();
                 if total > 0
                     && self.recent_files_selected >= self.recent_files_scroll_offset
@@ -268,21 +275,27 @@ impl Editor {
                 }
                 frame.render_stateful_widget(list, area, &mut list_state);
 
+                // Detect if the mouse is over the close button
                 let close_button_hovered = matches!(
                     &self.mouse_state.hover_target,
                     Some(HoverTarget::FileExplorerCloseButton)
                 );
+
+                // Set the color of the button based on hover state
                 let close_button_x = area.x + area.width.saturating_sub(3);
                 let close_fg = if close_button_hovered {
                     self.theme.tab_close_hover_fg
                 } else {
                     self.theme.line_number_fg
                 };
+
+                // Render the close button
                 let close_button = ratatui::widgets::Paragraph::new("×")
                     .style(ratatui::style::Style::default().fg(close_fg));
                 let close_area = ratatui::layout::Rect::new(close_button_x, area.y, 1, 1);
                 frame.render_widget(close_button, close_area);
 
+                // Render a cursor indicator on the selected item if the file explorer is focused
                 if is_focused && total > 0 {
                     let cursor_x = area.x + 1;
                     let cursor_y = area.y + 1
