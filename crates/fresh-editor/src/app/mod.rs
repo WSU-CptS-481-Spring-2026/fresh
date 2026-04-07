@@ -119,6 +119,12 @@ use ratatui::{
     layout::{Constraint, Direction, Layout},
     Frame,
 };
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum SidebarTab {
+    Files,
+    Recent,
+}
 use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
@@ -706,13 +712,13 @@ pub struct Editor {
     /// List of files opened by the editor
     recent_files: IndexSet<PathBuf>,
 
-    /// Whether the recent files side panel is visible
-    recent_files_panel_visible: bool,
+    /// Active tab inside the file explorer sidebar
+    file_explorer_active_tab: SidebarTab,
 
-    /// Selected index in the recent files panel (0-based, newest-first)
+    /// Selected index in the Recent tab (0-based, newest-first)
     recent_files_selected: usize,
 
-    /// Scroll offset for the recent files panel list
+    /// Scroll offset for the Recent tab list
     recent_files_scroll_offset: usize,
 }
 
@@ -1094,7 +1100,7 @@ impl Editor {
 
         let mut editor = Editor {
             recent_files: IndexSet::new(),
-            recent_files_panel_visible: false,
+            file_explorer_active_tab: SidebarTab::Files,
             recent_files_selected: 0,
             recent_files_scroll_offset: 0,
             buffers,
@@ -1829,9 +1835,7 @@ impl Editor {
     /// When the file explorer is visible, tabs only get a portion of the terminal width
     /// based on `file_explorer_width_percent`. This matches the layout calculation in render.rs.
     fn effective_tabs_width(&self) -> u16 {
-        if (self.file_explorer_visible && self.file_explorer.is_some())
-            || self.recent_files_panel_visible
-        {
+        if self.file_explorer_visible {
             // When file explorer is visible, tabs get (1 - explorer_width) of the terminal width
             let editor_percent = 1.0 - self.file_explorer_width_percent;
             (self.terminal_width as f32 * editor_percent) as u16

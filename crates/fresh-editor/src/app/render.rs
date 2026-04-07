@@ -3,6 +3,168 @@ use anyhow::Result as AnyhowResult;
 use rust_i18n::t;
 
 impl Editor {
+    fn sidebar_title(&self) -> String {
+        let keybinding_suffix = self
+            .keybindings
+            .get_keybinding_for_action(&Action::FocusFileExplorer, self.key_context)
+            .map(|kb| format!(" ({})", kb))
+            .unwrap_or_default();
+
+        if self.file_explorer_active_tab == SidebarTab::Files {
+            if let Some(explorer) = &self.file_explorer {
+                if explorer.is_search_active() {
+                    return format!(" /{} ", explorer.search_query());
+                }
+            }
+        }
+
+        if let Some(host) = self.remote_connection_info() {
+            let hostname = host
+                .split('@')
+                .last()
+                .unwrap_or(host)
+                .split(':')
+                .next()
+                .unwrap_or(host);
+            format!(" [{}]{} ", hostname, keybinding_suffix)
+        } else {
+            format!(" File Explorer{} ", keybinding_suffix)
+        }
+    }
+
+    pub(super) fn sidebar_tab_rects(
+        area: ratatui::layout::Rect,
+    ) -> [(SidebarTab, ratatui::layout::Rect); 2] {
+        let labels = [(SidebarTab::Files, " Files "), (SidebarTab::Recent, " Recent ")];
+        let mut x = area.x.saturating_add(1);
+        let y = area.y.saturating_add(1);
+
+        labels.map(|(tab, label)| {
+            let width = (label.len() as u16).min(area.width.saturating_sub(x.saturating_sub(area.x)));
+            let rect = ratatui::layout::Rect::new(x, y, width, 1);
+            x = x.saturating_add(width.saturating_add(1));
+            (tab, rect)
+        })
+    }
+
+    pub(super) fn sidebar_content_area(area: ratatui::layout::Rect) -> ratatui::layout::Rect {
+        ratatui::layout::Rect::new(
+            area.x.saturating_add(1),
+            area.y.saturating_add(2),
+            area.width.saturating_sub(2),
+            area.height.saturating_sub(3),
+        )
+    }
+
+    fn render_sidebar_tabs(
+        &self,
+        frame: &mut Frame,
+        area: ratatui::layout::Rect,
+        is_focused: bool,
+    ) {
+        for (tab, rect) in Self::sidebar_tab_rects(area) {
+            if rect.width == 0 {
+                continue;
+            }
+
+            let is_active = self.file_explorer_active_tab == tab;
+            let label = match tab {
+                SidebarTab::Files => " Files ",
+                SidebarTab::Recent => " Recent ",
+            };
+
+            let style = if is_active {
+                let mut style = ratatui::style::Style::default()
+                    .bg(self.theme.selection_bg)
+                    .fg(self.theme.editor_fg);
+                if is_focused {
+                    style = style.add_modifier(ratatui::style::Modifier::BOLD);
+                }
+                style
+            } else {
+                ratatui::style::Style::default()
+                    .bg(self.theme.editor_bg)
+                    .fg(self.theme.line_number_fg)
+            };
+
+            let paragraph = ratatui::widgets::Paragraph::new(label).style(style);
+            frame.render_widget(paragraph, rect);
+        }
+    }
+
+    fn render_recent_files_content(
+        &mut self,
+        frame: &mut Frame,
+        area: ratatui::layout::Rect,
+        is_focused: bool,
+    ) {
+        let viewport_height = area.height as usize;
+        let recent_files = self.get_recent_files();
+        let total = recent_files.len();
+
+        if total == 0 {
+            self.recent_files_selected = 0;
+            self.recent_files_scroll_offset = 0;
+        } else {
+            self.recent_files_selected = self.recent_files_selected.min(total - 1);
+            let max_scroll = total.saturating_sub(viewport_height);
+            self.recent_files_scroll_offset = self.recent_files_scroll_offset.min(max_scroll);
+
+            if self.recent_files_selected < self.recent_files_scroll_offset {
+                self.recent_files_scroll_offset = self.recent_files_selected;
+            } else if self.recent_files_selected
+                >= self.recent_files_scroll_offset + viewport_height
+            {
+                self.recent_files_scroll_offset = self
+                    .recent_files_selected
+                    .saturating_sub(viewport_height.saturating_sub(1));
+            }
+        }
+
+        let visible_end = (self.recent_files_scroll_offset + viewport_height).min(total);
+        let visible = &recent_files[self.recent_files_scroll_offset..visible_end];
+
+        let items: Vec<ratatui::widgets::ListItem> = visible
+            .iter()
+            .map(|path| {
+                let label = path
+                    .strip_prefix(&self.working_dir)
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_else(|_| path.display().to_string());
+                ratatui::widgets::ListItem::new(ratatui::text::Line::from(label))
+            })
+            .collect();
+
+        let list = ratatui::widgets::List::new(items)
+            .style(ratatui::style::Style::default().bg(self.theme.editor_bg))
+            .highlight_style(if is_focused {
+                ratatui::style::Style::default()
+                    .bg(self.theme.selection_bg)
+                    .fg(self.theme.editor_fg)
+            } else {
+                ratatui::style::Style::default().bg(self.theme.current_line_bg)
+            });
+
+        let mut list_state = ratatui::widgets::ListState::default();
+        if total > 0
+            && self.recent_files_selected >= self.recent_files_scroll_offset
+            && self.recent_files_selected < self.recent_files_scroll_offset + viewport_height
+        {
+            list_state.select(Some(self.recent_files_selected - self.recent_files_scroll_offset));
+        }
+        frame.render_stateful_widget(list, area, &mut list_state);
+
+        if is_focused && total > 0 {
+            let cursor_x = area.x;
+            let cursor_y = area.y + (self.recent_files_selected - self.recent_files_scroll_offset) as u16;
+            let cursor_indicator = ratatui::widgets::Paragraph::new("▌")
+                .style(ratatui::style::Style::default().fg(self.theme.cursor));
+            let cursor_area = ratatui::layout::Rect::new(cursor_x, cursor_y, 1, 1);
+            frame.render_widget(cursor_indicator, cursor_area);
+            frame.set_cursor_position((cursor_x, cursor_y));
+        }
+    }
+
     /// Render the editor to the terminal
     pub fn render(&mut self, frame: &mut Frame) {
         let _span = tracing::trace_span!("render").entered();
@@ -128,11 +290,9 @@ impl Editor {
         // Split main content area based on side panel visibility.
         // Also keep the layout split if a file explorer sync is in progress (to avoid flicker).
         let editor_content_area;
-        let file_explorer_should_show = self.file_explorer_visible
-            && (self.file_explorer.is_some() || self.file_explorer_sync_in_progress);
-        let recent_files_should_show = self.recent_files_panel_visible;
+        let sidebar_should_show = self.file_explorer_visible;
 
-        if file_explorer_should_show || recent_files_should_show {
+        if sidebar_should_show {
             let explorer_percent = (self.file_explorer_width_percent * 100.0) as u16;
             let editor_percent = 100 - explorer_percent;
             let horizontal_chunks = Layout::default()
@@ -146,165 +306,75 @@ impl Editor {
             self.cached_layout.file_explorer_area = Some(horizontal_chunks[0]);
             editor_content_area = horizontal_chunks[1];
 
-            if file_explorer_should_show {
-                // Get remote connection info before mutable borrow of file_explorer
-                let remote_connection = self.remote_connection_info().map(|s| s.to_string());
+            let area = horizontal_chunks[0];
+            let is_focused = self.key_context == KeyContext::FileExplorer;
+            let close_button_hovered = matches!(
+                &self.mouse_state.hover_target,
+                Some(HoverTarget::FileExplorerCloseButton)
+            );
+            let (title_style, border_style) = if is_focused {
+                (
+                    ratatui::style::Style::default()
+                        .fg(self.theme.editor_bg)
+                        .bg(self.theme.editor_fg)
+                        .add_modifier(ratatui::style::Modifier::BOLD),
+                    ratatui::style::Style::default().fg(self.theme.cursor),
+                )
+            } else {
+                (
+                    ratatui::style::Style::default().fg(self.theme.line_number_fg),
+                    ratatui::style::Style::default().fg(self.theme.split_separator_fg),
+                )
+            };
 
-                // Render file explorer (only if we have it - during sync we keep the area reserved)
-                if let Some(ref mut explorer) = self.file_explorer {
-                    let is_focused = self.key_context == KeyContext::FileExplorer;
+            let block = ratatui::widgets::Block::default()
+                .borders(ratatui::widgets::Borders::ALL)
+                .title(self.sidebar_title())
+                .title_style(title_style)
+                .border_style(border_style)
+                .style(ratatui::style::Style::default().bg(self.theme.editor_bg));
+            frame.render_widget(block, area);
+            self.render_sidebar_tabs(frame, area, is_focused);
 
-                    // Build set of files with unsaved changes
-                    let mut files_with_unsaved_changes = std::collections::HashSet::new();
-                    for (buffer_id, state) in &self.buffers {
-                        if state.buffer.is_modified() {
-                            if let Some(metadata) = self.buffer_metadata.get(buffer_id) {
-                                if let Some(file_path) = metadata.file_path() {
-                                    files_with_unsaved_changes.insert(file_path.clone());
+            let close_button_x = area.x + area.width.saturating_sub(3);
+            let close_fg = if close_button_hovered {
+                self.theme.tab_close_hover_fg
+            } else {
+                self.theme.line_number_fg
+            };
+            let close_button = ratatui::widgets::Paragraph::new("×")
+                .style(ratatui::style::Style::default().fg(close_fg));
+            let close_area = ratatui::layout::Rect::new(close_button_x, area.y, 1, 1);
+            frame.render_widget(close_button, close_area);
+
+            let content_area = Self::sidebar_content_area(area);
+            match self.file_explorer_active_tab {
+                SidebarTab::Files => {
+                    if let Some(ref mut explorer) = self.file_explorer {
+                        let mut files_with_unsaved_changes = std::collections::HashSet::new();
+                        for (buffer_id, state) in &self.buffers {
+                            if state.buffer.is_modified() {
+                                if let Some(metadata) = self.buffer_metadata.get(buffer_id) {
+                                    if let Some(file_path) = metadata.file_path() {
+                                        files_with_unsaved_changes.insert(file_path.clone());
+                                    }
                                 }
                             }
                         }
-                    }
 
-                    let close_button_hovered = matches!(
-                        &self.mouse_state.hover_target,
-                        Some(HoverTarget::FileExplorerCloseButton)
-                    );
-                    FileExplorerRenderer::render(
-                        explorer,
-                        frame,
-                        horizontal_chunks[0],
-                        is_focused,
-                        &files_with_unsaved_changes,
-                        &self.file_explorer_decoration_cache,
-                        &self.keybindings,
-                        self.key_context,
-                        &self.theme,
-                        close_button_hovered,
-                        remote_connection.as_deref(),
-                    );
-                }
-            // Note: if file_explorer is None but sync_in_progress is true,
-            // we just leave the area blank (or could render a placeholder)
-            } else {
-                // Geometry Area for recent files panel
-                let area = horizontal_chunks[0];
-                let viewport_height = area.height.saturating_sub(2) as usize;
-                // Get recent files and total number of files
-                let recent_files = self.get_recent_files();
-                let total = recent_files.len();
-
-                // Adjust selected index and scroll offset to ensure selected item is visible
-                if total == 0 {
-                    self.recent_files_selected = 0;
-                    self.recent_files_scroll_offset = 0;
-                } else {
-                    self.recent_files_selected = self.recent_files_selected.min(total - 1);
-                    let max_scroll = total.saturating_sub(viewport_height);
-                    self.recent_files_scroll_offset = self.recent_files_scroll_offset.min(max_scroll);
-
-                    if self.recent_files_selected < self.recent_files_scroll_offset {
-                        self.recent_files_scroll_offset = self.recent_files_selected;
-                    } else if self.recent_files_selected
-                        >= self.recent_files_scroll_offset + viewport_height
-                    {
-                        self.recent_files_scroll_offset = self
-                            .recent_files_selected
-                            .saturating_sub(viewport_height.saturating_sub(1));
+                        FileExplorerRenderer::render_content(
+                            explorer,
+                            frame,
+                            content_area,
+                            is_focused,
+                            &files_with_unsaved_changes,
+                            &self.file_explorer_decoration_cache,
+                            &self.theme,
+                        );
                     }
                 }
-
-                // Get the slice of recent files to display based on scroll offset and viewport height
-                let visible_end = (self.recent_files_scroll_offset + viewport_height).min(total);
-                let visible = &recent_files[self.recent_files_scroll_offset..visible_end];
-
-                // Convert visible recent file paths to ListItems, stripping the working directory prefix for cleaner display
-                let items: Vec<ratatui::widgets::ListItem> = visible
-                    .iter()
-                    .map(|path| {
-                        let label = path
-                            .strip_prefix(&self.working_dir)
-                            .map(|p| p.display().to_string())
-                            .unwrap_or_else(|_| path.display().to_string());
-                        ratatui::widgets::ListItem::new(ratatui::text::Line::from(label))
-                    })
-                    .collect();
-
-                // Highlight the selected item if the file explorer is focused, otherwise just show a static list
-                let is_focused = self.key_context == KeyContext::FileExplorer;
-                let (title_style, border_style) = if is_focused {
-                    (
-                        ratatui::style::Style::default()
-                            .fg(self.theme.editor_bg)
-                            .bg(self.theme.editor_fg)
-                            .add_modifier(ratatui::style::Modifier::BOLD),
-                        ratatui::style::Style::default().fg(self.theme.cursor),
-                    )
-                } else {
-                    (
-                        ratatui::style::Style::default().fg(self.theme.line_number_fg),
-                        ratatui::style::Style::default().fg(self.theme.split_separator_fg),
-                    )
-                };
-
-                // Render the list of recent files with a border and title, and highlight the selected item if focused
-                let list = ratatui::widgets::List::new(items)
-                    .block(
-                        ratatui::widgets::Block::default()
-                            .borders(ratatui::widgets::Borders::ALL)
-                            .title(" Recent Files ")
-                            .title_style(title_style)
-                            .border_style(border_style)
-                            .style(ratatui::style::Style::default().bg(self.theme.editor_bg)),
-                    )
-                    .highlight_style(if is_focused {
-                        ratatui::style::Style::default()
-                            .bg(self.theme.selection_bg)
-                            .fg(self.theme.editor_fg)
-                    } else {
-                        ratatui::style::Style::default().bg(self.theme.current_line_bg)
-                    });
-
-                // Set the selected file if there are recent files to choose and selected index is within visible window
-                let mut list_state = ratatui::widgets::ListState::default();
-                if total > 0
-                    && self.recent_files_selected >= self.recent_files_scroll_offset
-                    && self.recent_files_selected < self.recent_files_scroll_offset + viewport_height
-                {
-                    list_state.select(Some(self.recent_files_selected - self.recent_files_scroll_offset));
-                }
-                frame.render_stateful_widget(list, area, &mut list_state);
-
-                // Detect if the mouse is over the close button
-                let close_button_hovered = matches!(
-                    &self.mouse_state.hover_target,
-                    Some(HoverTarget::FileExplorerCloseButton)
-                );
-
-                // Set the color of the button based on hover state
-                let close_button_x = area.x + area.width.saturating_sub(3);
-                let close_fg = if close_button_hovered {
-                    self.theme.tab_close_hover_fg
-                } else {
-                    self.theme.line_number_fg
-                };
-
-                // Render the close button
-                let close_button = ratatui::widgets::Paragraph::new("×")
-                    .style(ratatui::style::Style::default().fg(close_fg));
-                let close_area = ratatui::layout::Rect::new(close_button_x, area.y, 1, 1);
-                frame.render_widget(close_button, close_area);
-
-                // Render a cursor indicator on the selected item if the file explorer is focused
-                if is_focused && total > 0 {
-                    let cursor_x = area.x + 1;
-                    let cursor_y = area.y + 1
-                        + (self.recent_files_selected - self.recent_files_scroll_offset) as u16;
-                    let cursor_indicator = ratatui::widgets::Paragraph::new("▌")
-                        .style(ratatui::style::Style::default().fg(self.theme.cursor));
-                    let cursor_area = ratatui::layout::Rect::new(cursor_x, cursor_y, 1, 1);
-                    frame.render_widget(cursor_indicator, cursor_area);
-                    frame.set_cursor_position((cursor_x, cursor_y));
+                SidebarTab::Recent => {
+                    self.render_recent_files_content(frame, content_area, is_focused);
                 }
             }
         } else {

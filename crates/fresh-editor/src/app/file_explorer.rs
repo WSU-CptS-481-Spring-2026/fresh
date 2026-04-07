@@ -44,6 +44,21 @@ fn get_parent_node_id(
 }
 
 impl Editor {
+    pub(super) fn recent_files_tab_active(&self) -> bool {
+        self.file_explorer_active_tab == SidebarTab::Recent
+    }
+
+    pub(super) fn select_sidebar_tab(&mut self, tab: SidebarTab) {
+        self.file_explorer_active_tab = tab;
+
+        if matches!(tab, SidebarTab::Files)
+            && self.file_explorer.is_none()
+            && !self.file_explorer_sync_in_progress
+        {
+            self.init_file_explorer();
+        }
+    }
+
     pub fn file_explorer_visible(&self) -> bool {
         self.file_explorer_visible
     }
@@ -53,14 +68,10 @@ impl Editor {
     }
 
     pub fn toggle_file_explorer(&mut self) {
-        // Keep side panels mutually exclusive.
-        self.recent_files_panel_visible = false;
         self.file_explorer_visible = !self.file_explorer_visible;
 
         if self.file_explorer_visible {
-            if self.file_explorer.is_none() {
-                self.init_file_explorer();
-            }
+            self.select_sidebar_tab(SidebarTab::Files);
             self.key_context = KeyContext::FileExplorer;
             self.set_status_message(t!("explorer.opened").to_string());
             self.sync_file_explorer_to_active_file();
@@ -75,24 +86,23 @@ impl Editor {
     }
 
     pub fn toggle_recent_files(&mut self) {
-        // Keep side panels mutually exclusive.
-        self.file_explorer_visible = false;
-        self.recent_files_panel_visible = !self.recent_files_panel_visible;
-
-        if self.recent_files_panel_visible {
-            self.key_context = KeyContext::FileExplorer;
-            self.recent_files_selected = 0;
-            self.recent_files_scroll_offset = 0;
-            self.set_status_message(format!("Recent files: {}", self.recent_files.len()));
-        } else {
+        if self.file_explorer_visible && self.recent_files_tab_active() {
+            self.file_explorer_visible = false;
             self.key_context = KeyContext::Normal;
             self.set_status_message("Recent files closed".to_string());
+        } else {
+            self.file_explorer_visible = true;
+            self.select_sidebar_tab(SidebarTab::Recent);
+            self.key_context = KeyContext::FileExplorer;
+            self.set_status_message(format!("Recent files: {}", self.recent_files.len()));
         }
     }
 
     pub fn show_file_explorer(&mut self) {
         if !self.file_explorer_visible {
             self.toggle_file_explorer();
+        } else {
+            self.select_sidebar_tab(SidebarTab::Files);
         }
     }
 
@@ -199,7 +209,7 @@ impl Editor {
     }
 
     pub fn file_explorer_navigate_up(&mut self) {
-        if self.recent_files_panel_visible {
+        if self.recent_files_tab_active() {
             if self.recent_files_selected > 0 {
                 self.recent_files_selected -= 1;
             }
@@ -212,7 +222,7 @@ impl Editor {
     }
 
     pub fn file_explorer_navigate_down(&mut self) {
-        if self.recent_files_panel_visible {
+        if self.recent_files_tab_active() {
             let total = self.recent_files.len();
             if total > 0 {
                 self.recent_files_selected = (self.recent_files_selected + 1).min(total - 1);
@@ -226,7 +236,7 @@ impl Editor {
     }
 
     pub fn file_explorer_page_up(&mut self) {
-        if self.recent_files_panel_visible {
+        if self.recent_files_tab_active() {
             let page = 10usize;
             self.recent_files_selected = self.recent_files_selected.saturating_sub(page);
             return;
@@ -238,7 +248,7 @@ impl Editor {
     }
 
     pub fn file_explorer_page_down(&mut self) {
-        if self.recent_files_panel_visible {
+        if self.recent_files_tab_active() {
             let total = self.recent_files.len();
             if total > 0 {
                 let page = 10usize;
@@ -256,7 +266,7 @@ impl Editor {
     /// - If on expanded directory: collapse it
     /// - If on file or collapsed directory: select parent directory
     pub fn file_explorer_collapse(&mut self) {
-        if self.recent_files_panel_visible {
+        if self.recent_files_tab_active() {
             return;
         }
         let Some(explorer) = &self.file_explorer else {
@@ -285,7 +295,7 @@ impl Editor {
     }
 
     pub fn file_explorer_toggle_expand(&mut self) {
-        if self.recent_files_panel_visible {
+        if self.recent_files_tab_active() {
             return;
         }
         let selected_id = if let Some(explorer) = &self.file_explorer {
@@ -403,7 +413,7 @@ impl Editor {
     }
 
     pub fn file_explorer_open_file(&mut self) -> AnyhowResult<()> {
-        if self.recent_files_panel_visible {
+        if self.recent_files_tab_active() {
             if let Some(path) = self.get_recent_files().get(self.recent_files_selected).cloned() {
                 match self.open_file(&path) {
                     Ok(_) => {
@@ -463,6 +473,10 @@ impl Editor {
     }
 
     pub fn file_explorer_refresh(&mut self) {
+        if self.recent_files_tab_active() {
+            return;
+        }
+
         let (selected_id, node_name) = if let Some(explorer) = &self.file_explorer {
             if let Some(selected_id) = explorer.get_selected() {
                 let node_name = explorer
@@ -506,6 +520,10 @@ impl Editor {
     }
 
     pub fn file_explorer_new_file(&mut self) {
+        if self.recent_files_tab_active() {
+            return;
+        }
+
         if let Some(explorer) = &mut self.file_explorer {
             if let Some(selected_id) = explorer.get_selected() {
                 let node = explorer.tree().get_node(selected_id);
@@ -557,6 +575,10 @@ impl Editor {
     }
 
     pub fn file_explorer_new_directory(&mut self) {
+        if self.recent_files_tab_active() {
+            return;
+        }
+
         if let Some(explorer) = &mut self.file_explorer {
             if let Some(selected_id) = explorer.get_selected() {
                 let node = explorer.tree().get_node(selected_id);
@@ -606,6 +628,10 @@ impl Editor {
     }
 
     pub fn file_explorer_delete(&mut self) {
+        if self.recent_files_tab_active() {
+            return;
+        }
+
         if let Some(explorer) = &self.file_explorer {
             if let Some(selected_id) = explorer.get_selected() {
                 // Don't allow deleting the root directory
@@ -719,6 +745,10 @@ impl Editor {
     }
 
     pub fn file_explorer_rename(&mut self) {
+        if self.recent_files_tab_active() {
+            return;
+        }
+
         if let Some(explorer) = &self.file_explorer {
             if let Some(selected_id) = explorer.get_selected() {
                 // Don't allow renaming the root directory
@@ -836,6 +866,10 @@ impl Editor {
     }
 
     pub fn file_explorer_toggle_hidden(&mut self) {
+        if self.recent_files_tab_active() {
+            return;
+        }
+
         if let Some(explorer) = &mut self.file_explorer {
             explorer.toggle_show_hidden();
             let msg = if explorer.ignore_patterns().show_hidden() {
@@ -848,6 +882,10 @@ impl Editor {
     }
 
     pub fn file_explorer_toggle_gitignored(&mut self) {
+        if self.recent_files_tab_active() {
+            return;
+        }
+
         if let Some(explorer) = &mut self.file_explorer {
             explorer.toggle_show_gitignored();
             let show = explorer.ignore_patterns().show_gitignored();
@@ -862,6 +900,10 @@ impl Editor {
 
     /// Clear the file explorer search
     pub fn file_explorer_search_clear(&mut self) {
+        if self.recent_files_tab_active() {
+            return;
+        }
+
         if let Some(explorer) = &mut self.file_explorer {
             explorer.search_clear();
         }
@@ -869,6 +911,10 @@ impl Editor {
 
     /// Add a character to the file explorer search
     pub fn file_explorer_search_push_char(&mut self, c: char) {
+        if self.recent_files_tab_active() {
+            return;
+        }
+
         if let Some(explorer) = &mut self.file_explorer {
             explorer.search_push_char(c);
             explorer.update_scroll_for_selection();
@@ -877,6 +923,10 @@ impl Editor {
 
     /// Remove a character from the file explorer search (backspace)
     pub fn file_explorer_search_pop_char(&mut self) {
+        if self.recent_files_tab_active() {
+            return;
+        }
+
         if let Some(explorer) = &mut self.file_explorer {
             explorer.search_pop_char();
             explorer.update_scroll_for_selection();

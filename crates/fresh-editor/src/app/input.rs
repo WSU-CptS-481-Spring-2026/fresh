@@ -2190,25 +2190,43 @@ impl Editor {
         // Focus file explorer
         self.key_context = crate::input::keybindings::KeyContext::FileExplorer;
 
-        // Recent Files panel reuses the same side-panel area and controls as file explorer.
-        if self.recent_files_panel_visible {
-            let relative_row = row.saturating_sub(explorer_area.y + 1); // +1 for top border
+        if row == explorer_area.y.saturating_add(1) {
+            for (tab, rect) in Self::sidebar_tab_rects(explorer_area) {
+                if col >= rect.x && col < rect.x.saturating_add(rect.width) {
+                    self.select_sidebar_tab(tab);
+                    match tab {
+                        SidebarTab::Files => {
+                            self.set_status_message(rust_i18n::t!("explorer.focused").to_string());
+                            self.sync_file_explorer_to_active_file();
+                        }
+                        SidebarTab::Recent => {
+                            self.set_status_message(format!("Recent files: {}", self.recent_files.len()));
+                        }
+                    }
+                    return Ok(());
+                }
+            }
+        }
+
+        let content_area = Self::sidebar_content_area(explorer_area);
+        if row < content_area.y || row >= content_area.y.saturating_add(content_area.height) {
+            return Ok(());
+        }
+
+        if self.recent_files_tab_active() {
+            let relative_row = row.saturating_sub(content_area.y);
             let recent_files = self.get_recent_files();
             let clicked_index = (relative_row as usize) + self.recent_files_scroll_offset;
 
             if clicked_index < recent_files.len() {
                 self.recent_files_selected = clicked_index;
-                if row > explorer_area.y {
-                    self.file_explorer_open_file()?;
-                }
+                self.file_explorer_open_file()?;
             }
 
             return Ok(());
         }
 
-        // Calculate which item was clicked (accounting for border and title)
-        // The file explorer has a 1-line border at top and bottom
-        let relative_row = row.saturating_sub(explorer_area.y + 1); // +1 for top border
+        let relative_row = row.saturating_sub(content_area.y);
 
         if let Some(ref mut explorer) = self.file_explorer {
             let display_nodes = explorer.get_display_nodes();

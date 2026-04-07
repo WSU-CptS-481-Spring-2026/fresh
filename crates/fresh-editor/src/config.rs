@@ -1571,13 +1571,6 @@ impl MenuConfig {
                         when: None,
                         checkbox: Some(context_keys::FILE_EXPLORER.to_string()),
                     },
-                    MenuItem::Action {
-                        label: t!("menu.view.recent_files").to_string(),
-                        action: "toggle_recent_files".to_string(), // Placeholder - implement recent files menu later
-                        args: HashMap::new(),
-                        when: None,
-                        checkbox: None,
-                    },
                     MenuItem::Separator { separator: true },
                     MenuItem::Action {
                         label: t!("menu.view.line_numbers").to_string(),
