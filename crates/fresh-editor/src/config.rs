@@ -1997,6 +1997,13 @@ impl MenuConfig {
                         checkbox: None,
                     },
                     MenuItem::Action {
+                        label: t!("menu.explorer.move").to_string(),
+                        action: "file_explorer_move".to_string(),
+                        args: HashMap::new(),
+                        when: Some(context_keys::FILE_EXPLORER_FOCUSED.to_string()),
+                        checkbox: None,
+                    },
+                    MenuItem::Action {
                         label: t!("menu.explorer.delete").to_string(),
                         action: "file_explorer_delete".to_string(),
                         args: HashMap::new(),

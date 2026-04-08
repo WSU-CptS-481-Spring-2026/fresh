@@ -2549,6 +2549,7 @@ pub fn action_to_events(
         | Action::FileExplorerNewDirectory
         | Action::FileExplorerDelete
         | Action::FileExplorerRename
+        | Action::FileExplorerMove
         | Action::FileExplorerToggleHidden
         | Action::FileExplorerToggleGitignored
         | Action::FileExplorerSearchClear

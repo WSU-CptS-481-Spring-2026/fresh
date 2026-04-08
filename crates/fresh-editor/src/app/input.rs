@@ -724,6 +724,7 @@ impl Editor {
             Action::FileExplorerNewDirectory => self.file_explorer_new_directory(),
             Action::FileExplorerDelete => self.file_explorer_delete(),
             Action::FileExplorerRename => self.file_explorer_rename(),
+            Action::FileExplorerMove => self.file_explorer_move(),
             Action::FileExplorerToggleHidden => self.file_explorer_toggle_hidden(),
             Action::FileExplorerToggleGitignored => self.file_explorer_toggle_gitignored(),
             Action::FileExplorerSearchClear => self.file_explorer_search_clear(),
