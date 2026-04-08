@@ -332,6 +332,12 @@ impl Editor {
             } => {
                 self.perform_file_explorer_rename(original_path, original_name, input, is_new_file);
             }
+            PromptType::FileExplorerMove {
+                original_path,
+                original_name,
+            } => {
+                self.perform_file_explorer_move(original_path, original_name, input);
+            }
             PromptType::ConfirmDeleteFile { path, is_dir } => {
                 let input_lower = input.trim().to_lowercase();
                 if input_lower == "y" || input_lower == "yes" {

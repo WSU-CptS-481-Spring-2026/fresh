@@ -2,6 +2,7 @@ use anyhow::Result as AnyhowResult;
 use rust_i18n::t;
 
 use super::*;
+use crate::primitives::path_utils::expand_tilde;
 use crate::view::file_tree::TreeNode;
 use std::path::PathBuf;
 
@@ -25,6 +26,43 @@ fn timestamp_suffix() -> u64 {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs()
+}
+
+fn update_buffer_path_metadata(
+    editor: &mut Editor,
+    original_path: &std::path::Path,
+    new_path: &std::path::Path,
+) -> Vec<BufferId> {
+    let affected_buffers: Vec<BufferId> = editor
+        .buffers
+        .iter()
+        .filter(|(_, state)| state.buffer.file_path() == Some(original_path))
+        .map(|(id, _)| *id)
+        .collect();
+
+    for buffer_id in &affected_buffers {
+        if let Some(state) = editor.buffers.get_mut(buffer_id) {
+            state.buffer.set_file_path(new_path.to_path_buf());
+        }
+
+        if let Some(metadata) = editor.buffer_metadata.get_mut(buffer_id) {
+            let file_uri = url::Url::from_file_path(new_path)
+                .ok()
+                .and_then(|u| u.as_str().parse::<lsp_types::Uri>().ok());
+
+            metadata.kind = super::BufferKind::File {
+                path: new_path.to_path_buf(),
+                uri: file_uri,
+            };
+
+            metadata.display_name = super::BufferMetadata::display_name_for_path(
+                new_path,
+                &editor.working_dir,
+            );
+        }
+    }
+
+    affected_buffers
 }
 
 /// Get the parent node ID for refreshing after file operations.
@@ -778,6 +816,58 @@ impl Editor {
         }
     }
 
+    pub fn file_explorer_move(&mut self) {
+        let mut selected_target = None;
+        if !self.recent_files_tab_active() {
+            if let Some(explorer) = &self.file_explorer {
+                if let Some(selected_id) = explorer.get_selected() {
+                    if selected_id == explorer.tree().root_id() {
+                        self.set_status_message(t!("explorer.cannot_move_root").to_string());
+                        return;
+                    }
+
+                    selected_target = explorer
+                        .tree()
+                        .get_node(selected_id)
+                        .map(|node| (node.entry.path.clone(), node.entry.name.clone()));
+                }
+            }
+        }
+
+        let target = selected_target.or_else(|| {
+            self.buffer_metadata
+                .get(&self.active_buffer())
+                .and_then(|metadata| metadata.file_path().cloned())
+                .map(|path| {
+                    let name = path
+                        .file_name()
+                        .map(|name| name.to_string_lossy().to_string())
+                        .unwrap_or_else(|| path.display().to_string());
+                    (path, name)
+                })
+        });
+
+        let Some((original_path, original_name)) = target else {
+            self.set_status_message(t!("explorer.no_file_to_move").to_string());
+            return;
+        };
+
+        let initial_folder = original_path
+            .parent()
+            .map(|path| path.display().to_string())
+            .unwrap_or_else(|| self.working_dir.display().to_string());
+
+        let prompt = crate::view::prompt::Prompt::with_initial_text(
+            t!("explorer.move_prompt").to_string(),
+            crate::view::prompt::PromptType::FileExplorerMove {
+                original_path,
+                original_name,
+            },
+            initial_folder,
+        );
+        self.prompt = Some(prompt);
+    }
+
     /// Perform the actual file explorer rename operation (called after prompt confirmation)
     pub fn perform_file_explorer_rename(
         &mut self,
@@ -812,39 +902,10 @@ impl Editor {
                         explorer.navigate_to_path(&new_path);
                     }
 
-                    // Update buffer metadata if this file is open in a buffer
-                    let buffer_to_update = self
-                        .buffers
-                        .iter()
-                        .find(|(_, state)| state.buffer.file_path() == Some(&original_path))
-                        .map(|(id, _)| *id);
+                    let affected_buffers =
+                        update_buffer_path_metadata(self, &original_path, &new_path);
 
-                    if let Some(buffer_id) = buffer_to_update {
-                        // Update the buffer's file path
-                        if let Some(state) = self.buffers.get_mut(&buffer_id) {
-                            state.buffer.set_file_path(new_path.clone());
-                        }
-
-                        // Update the buffer metadata
-                        if let Some(metadata) = self.buffer_metadata.get_mut(&buffer_id) {
-                            // Compute new URI
-                            let file_uri = url::Url::from_file_path(&new_path)
-                                .ok()
-                                .and_then(|u| u.as_str().parse::<lsp_types::Uri>().ok());
-
-                            // Update kind with new path and URI
-                            metadata.kind = super::BufferKind::File {
-                                path: new_path.clone(),
-                                uri: file_uri,
-                            };
-
-                            // Update display name
-                            metadata.display_name = super::BufferMetadata::display_name_for_path(
-                                &new_path,
-                                &self.working_dir,
-                            );
-                        }
-
+                    if !affected_buffers.is_empty() {
                         // Only switch focus to the buffer if this is a new file being created
                         // For renaming existing files from the explorer, keep focus in explorer.
                         if is_new_file {
@@ -861,6 +922,102 @@ impl Editor {
                         t!("explorer.error_renaming", error = e.to_string()).to_string(),
                     );
                 }
+            }
+        }
+    }
+
+    pub fn perform_file_explorer_move(
+        &mut self,
+        original_path: std::path::PathBuf,
+        original_name: String,
+        destination: String,
+    ) {
+        let destination = destination.trim();
+        if destination.is_empty() {
+            self.set_status_message(t!("explorer.move_cancelled").to_string());
+            return;
+        }
+
+        let expanded_destination = expand_tilde(destination);
+        let current_parent = original_path.parent().unwrap_or(&self.working_dir);
+        let destination_dir = if expanded_destination.is_absolute() {
+            normalize_path(&expanded_destination)
+        } else {
+            normalize_path(&current_parent.join(expanded_destination))
+        };
+
+        if !self.filesystem.exists(&destination_dir) {
+            self.set_status_message(
+                t!(
+                    "explorer.move_destination_missing",
+                    path = destination_dir.display().to_string()
+                )
+                .to_string(),
+            );
+            return;
+        }
+
+        match self.filesystem.is_dir(&destination_dir) {
+            Ok(true) => {}
+            Ok(false) => {
+                self.set_status_message(
+                    t!(
+                        "explorer.move_destination_not_directory",
+                        path = destination_dir.display().to_string()
+                    )
+                    .to_string(),
+                );
+                return;
+            }
+            Err(e) => {
+                self.set_status_message(
+                    t!("explorer.error_moving", error = e.to_string()).to_string(),
+                );
+                return;
+            }
+        }
+
+        let new_path = destination_dir.join(&original_name);
+        if new_path == original_path {
+            self.set_status_message(t!("explorer.move_cancelled").to_string());
+            return;
+        }
+
+        if self.filesystem.exists(&new_path) {
+            self.set_status_message(
+                t!(
+                    "explorer.move_destination_exists",
+                    path = new_path.display().to_string()
+                )
+                .to_string(),
+            );
+            return;
+        }
+
+        match self.filesystem.rename(&original_path, &new_path) {
+            Ok(_) => {
+                if let (Some(explorer), Some(runtime)) = (&mut self.file_explorer, &self.tokio_runtime)
+                {
+                    let root_id = explorer.tree().root_id();
+                    let _ = runtime.block_on(explorer.tree_mut().refresh_node(root_id));
+                    explorer.navigate_to_path(&new_path);
+                }
+
+                update_buffer_path_metadata(self, &original_path, &new_path);
+
+                self.set_status_message(
+                    t!(
+                        "explorer.moved",
+                        name = &original_name,
+                        destination = destination_dir.display().to_string()
+                    )
+                    .to_string(),
+                );
+            }
+            Err(e) => {
+                self.set_status_message(
+                    t!("explorer.error_moving", error = e.to_string()).to_string(),
+                );
             }
         }
     }

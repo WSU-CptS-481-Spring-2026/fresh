@@ -112,6 +112,12 @@ pub enum PromptType {
         /// False if renaming an existing file (should keep focus in file explorer)
         is_new_file: bool,
     },
+    /// File Explorer move operation
+    /// Stores the original path and name for the file/directory being moved
+    FileExplorerMove {
+        original_path: std::path::PathBuf,
+        original_name: String,
+    },
     /// Confirm deleting a file or directory in the file explorer
     ConfirmDeleteFile {
         path: std::path::PathBuf,
