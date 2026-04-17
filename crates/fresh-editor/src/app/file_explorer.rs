@@ -209,14 +209,18 @@ impl Editor {
     pub fn set_file_explorer_side(&mut self, side: &str) {
         let was_right = self.file_explorer_on_right;
         self.file_explorer_on_right = matches!(side, "right");
-        if self.file_explorer_on_right != was_right {
-            let status = if self.file_explorer_on_right {
-                "File explorer moved to the right side"
+        let status = if self.file_explorer_on_right == was_right {
+            if self.file_explorer_on_right {
+                "File explorer already on the right side"
             } else {
-                "File explorer moved to the left side"
-            };
-            self.set_status_message(status.to_string());
-        }
+                "File explorer already on the left side"
+            }
+        } else if self.file_explorer_on_right {
+            "File explorer moved to the right side"
+        } else {
+            "File explorer moved to the left side"
+        };
+        self.set_status_message(status.to_string());
     }
 
     pub(crate) fn init_file_explorer(&mut self) {

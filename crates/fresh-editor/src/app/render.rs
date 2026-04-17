@@ -295,13 +295,23 @@ impl Editor {
         if sidebar_should_show {
             let explorer_percent = (self.file_explorer_width_percent * 100.0) as u16;
             let editor_percent = 100 - explorer_percent;
-            let horizontal_chunks = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([
-                    Constraint::Percentage(explorer_percent), // File explorer
-                    Constraint::Percentage(editor_percent),   // Editor area
-                ])
-                .split(main_content_area);
+            let horizontal_chunks = if self.file_explorer_on_right {
+                Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints([
+                        Constraint::Percentage(editor_percent),   // Editor area
+                        Constraint::Percentage(explorer_percent), // File explorer
+                    ])
+                    .split(main_content_area)
+            } else {
+                Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints([
+                        Constraint::Percentage(explorer_percent), // File explorer
+                        Constraint::Percentage(editor_percent),   // Editor area
+                    ])
+                    .split(main_content_area)
+            };
 
             let explorer_area = if self.file_explorer_on_right {
                 self.cached_layout.file_explorer_area = Some(horizontal_chunks[1]);
