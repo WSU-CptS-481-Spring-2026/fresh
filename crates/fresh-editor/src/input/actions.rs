@@ -2535,6 +2535,7 @@ pub fn action_to_events(
         | Action::ToggleTabBar
         | Action::FocusFileExplorer
         | Action::FocusEditor
+        | Action::SetFileExplorerSide(_)
         | Action::SetBackground
         | Action::SetBackgroundBlend
         | Action::FileExplorerUp

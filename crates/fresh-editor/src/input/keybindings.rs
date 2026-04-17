@@ -479,6 +479,7 @@ pub enum Action {
     ToggleTabBar,
     FocusFileExplorer,
     FocusEditor,
+    SetFileExplorerSide(String),
     FileExplorerUp,
     FileExplorerDown,
     FileExplorerPageUp,
@@ -809,6 +810,13 @@ impl Action {
             "toggle_tab_bar" => Self::ToggleTabBar,
             "focus_file_explorer" => Self::FocusFileExplorer,
             "focus_editor" => Self::FocusEditor,
+            "set_file_explorer_side" => {
+                if let Some(serde_json::Value::String(side)) = args.get("side") {
+                    Self::SetFileExplorerSide(side.clone())
+                } else {
+                    return None;
+                }
+            }
             "file_explorer_up" => Self::FileExplorerUp,
             "file_explorer_down" => Self::FileExplorerDown,
             "file_explorer_page_up" => Self::FileExplorerPageUp,
@@ -1865,6 +1873,7 @@ impl KeybindingResolver {
             Action::ToggleTabBar => t!("action.toggle_tab_bar"),
             Action::FocusFileExplorer => t!("action.focus_file_explorer"),
             Action::FocusEditor => t!("action.focus_editor"),
+            Action::SetFileExplorerSide(side) => format!("Set file explorer side to {}", side).into(),
             Action::FileExplorerUp => t!("action.file_explorer_up"),
             Action::FileExplorerDown => t!("action.file_explorer_down"),
             Action::FileExplorerPageUp => t!("action.file_explorer_page_up"),

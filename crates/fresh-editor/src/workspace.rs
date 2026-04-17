@@ -220,6 +220,7 @@ pub struct FileExplorerState {
     pub visible: bool,
     #[serde(default)]
     pub width_percent: f32,
+    pub on_right: bool,
     /// Expanded directories (relative paths)
     #[serde(default)]
     pub expanded_dirs: Vec<PathBuf>,
@@ -239,6 +240,7 @@ impl Default for FileExplorerState {
         Self {
             visible: false,
             width_percent: 0.3,
+            on_right: false,
             expanded_dirs: Vec::new(),
             scroll_offset: 0,
             show_hidden: false,

@@ -49,6 +49,7 @@ impl Editor {
             .set(context_keys::LSP_AVAILABLE, lsp_available)
             .set(context_keys::FILE_EXPLORER_SHOW_HIDDEN, show_hidden)
             .set(context_keys::FILE_EXPLORER_SHOW_GITIGNORED, show_gitignored)
+            .set(context_keys::FILE_EXPLORER_ON_RIGHT, self.file_explorer_on_right)
             .set(context_keys::HAS_SELECTION, has_selection)
             .set(context_keys::MENU_BAR, menu_bar)
             .set(context_keys::FORMATTER_AVAILABLE, formatter_available)

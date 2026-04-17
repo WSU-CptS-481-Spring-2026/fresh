@@ -303,10 +303,17 @@ impl Editor {
                 ])
                 .split(main_content_area);
 
-            self.cached_layout.file_explorer_area = Some(horizontal_chunks[0]);
-            editor_content_area = horizontal_chunks[1];
+            let explorer_area = if self.file_explorer_on_right {
+                self.cached_layout.file_explorer_area = Some(horizontal_chunks[1]);
+                editor_content_area = horizontal_chunks[0];
+                horizontal_chunks[1]
+            } else {
+                self.cached_layout.file_explorer_area = Some(horizontal_chunks[0]);
+                editor_content_area = horizontal_chunks[1];
+                horizontal_chunks[0]
+            };
 
-            let area = horizontal_chunks[0];
+            let area = explorer_area;
             let is_focused = self.key_context == KeyContext::FileExplorer;
             let close_button_hovered = matches!(
                 &self.mouse_state.hover_target,

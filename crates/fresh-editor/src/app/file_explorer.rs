@@ -206,6 +206,19 @@ impl Editor {
         self.set_status_message(t!("editor.focused").to_string());
     }
 
+    pub fn set_file_explorer_side(&mut self, side: &str) {
+        let was_right = self.file_explorer_on_right;
+        self.file_explorer_on_right = matches!(side, "right");
+        if self.file_explorer_on_right != was_right {
+            let status = if self.file_explorer_on_right {
+                "File explorer moved to the right side"
+            } else {
+                "File explorer moved to the left side"
+            };
+            self.set_status_message(status.to_string());
+        }
+    }
+
     pub(crate) fn init_file_explorer(&mut self) {
         // Use remote home directory if in remote mode, otherwise local working directory
         let root_path = if self.filesystem.remote_connection_info().is_some() {

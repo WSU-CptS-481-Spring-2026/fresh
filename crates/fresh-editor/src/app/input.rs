@@ -659,6 +659,7 @@ impl Editor {
             Action::ToggleMenuBar => self.toggle_menu_bar(),
             Action::ToggleTabBar => self.toggle_tab_bar(),
             Action::ToggleLineNumbers => self.toggle_line_numbers(),
+            Action::SetFileExplorerSide(side) => self.set_file_explorer_side(&side),
             Action::ToggleMouseCapture => self.toggle_mouse_capture(),
             Action::ToggleMouseHover => self.toggle_mouse_hover(),
             Action::ToggleDebugHighlights => self.toggle_debug_highlights(),

@@ -20,6 +20,7 @@ pub mod context_keys {
     pub const LSP_AVAILABLE: &str = "lsp_available";
     pub const FILE_EXPLORER_SHOW_HIDDEN: &str = "file_explorer_show_hidden";
     pub const FILE_EXPLORER_SHOW_GITIGNORED: &str = "file_explorer_show_gitignored";
+    pub const FILE_EXPLORER_ON_RIGHT: &str = "file_explorer_on_right";
     pub const HAS_SELECTION: &str = "has_selection";
     pub const FORMATTER_AVAILABLE: &str = "formatter_available";
     pub const INLAY_HINTS: &str = "inlay_hints";

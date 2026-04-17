@@ -328,6 +328,9 @@ pub struct Editor {
     /// This is the runtime value that can be modified by dragging the border
     file_explorer_width_percent: f32,
 
+    /// Whether file explorer is rendered on the right side instead of the left
+    file_explorer_on_right: bool,
+
     /// Pending show_hidden setting to apply when file explorer is initialized (from session restore)
     pending_file_explorer_show_hidden: Option<bool>,
 
@@ -1147,6 +1150,7 @@ impl Editor {
             file_explorer_visible: false,
             file_explorer_sync_in_progress: false,
             file_explorer_width_percent: file_explorer_width,
+            file_explorer_on_right: false,
             pending_file_explorer_show_hidden: None,
             pending_file_explorer_show_gitignored: None,
             menu_bar_visible: show_menu_bar,

@@ -2020,6 +2020,27 @@ impl MenuConfig {
                     },
                     MenuItem::Separator { separator: true },
                     MenuItem::Action {
+                        label: "Move file explorer to left".to_string(),
+                        action: "set_file_explorer_side".to_string(),
+                        args: HashMap::from([(
+                            "side".to_string(),
+                            serde_json::json!("left"),
+                        )]),
+                        when: Some(context_keys::FILE_EXPLORER.to_string()),
+                        checkbox: None,
+                    },
+                    MenuItem::Action {
+                        label: "Move file explorer to right".to_string(),
+                        action: "set_file_explorer_side".to_string(),
+                        args: HashMap::from([(
+                            "side".to_string(),
+                            serde_json::json!("right"),
+                        )]),
+                        when: Some(context_keys::FILE_EXPLORER.to_string()),
+                        checkbox: None,
+                    },
+                    MenuItem::Separator { separator: true },
+                    MenuItem::Action {
                         label: t!("menu.explorer.show_hidden").to_string(),
                         action: "file_explorer_toggle_hidden".to_string(),
                         args: HashMap::new(),
