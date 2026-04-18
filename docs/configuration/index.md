@@ -230,7 +230,7 @@ All settings can be changed via the Settings UI (command palette → "Open Setti
 
 | Setting | Description | Default |
 |---------|-------------|---------|
-| Line numbers | Show line numbers in gutter | on |
+| Line numbers | Show line numbers in gutter (width scales with line count: 1–9→1 digit, 10–99→2 digits, etc.) | on |
 | Line wrap | Soft-wrap long lines | off |
 | Rulers | Column positions for vertical ruler lines | none |
 | Vertical scrollbar | Show vertical scrollbar | on |

@@ -214,7 +214,7 @@ impl Editor {
                 self.mouse_state.dragging_text_selection = false;
                 self.mouse_state.drag_selection_split = None;
                 self.mouse_state.drag_selection_anchor = None;
-                self.mouse_state.drag_selection_by_words = false;
+                self.mouse_state.drag_selection_by_words = false; // Issue #1202: cleared on mouse up
                 // Clear popup scrollbar drag state
                 self.mouse_state.dragging_popup_scrollbar = None;
                 self.mouse_state.drag_start_popup_scroll = None;
@@ -1142,7 +1142,8 @@ impl Editor {
         // Now select the word under cursor
         self.handle_action(Action::SelectWord)?;
 
-        // Set up drag state so subsequent drag events extend selection word-by-word
+        // Issue #1202: Set up drag state so subsequent drag events extend selection word-by-word
+        // instead of character-by-character. Single-click-then-drag stays character-based.
         if let Some(cursor) = self
             .split_view_states
             .get(&leaf_id)
@@ -2180,7 +2181,8 @@ impl Editor {
                 return Ok(());
             };
 
-            // When drag started with double-click, snap to word boundaries
+            // Issue #1202: When drag started with double-click, snap to word boundaries.
+            // Dragging right uses find_word_end; dragging left uses find_word_start.
             let new_position = if self.mouse_state.drag_selection_by_words {
                 if target_position >= anchor_position {
                     find_word_end(&state.buffer, target_position)

@@ -2123,10 +2123,14 @@ impl Editor {
             return (0, 0);
         }
 
-        // Calculate gutter width (estimate based on line count)
+        // Calculate gutter width (scales with line count: 1–9→1 digit, 10–99→2, etc.)
         let line_count = buffer.line_count().unwrap_or(1);
-        let digits = (line_count as f64).log10().floor() as usize + 1;
-        let gutter_width = 1 + digits.max(4) + 3; // indicator + digits + separator
+        let digits = if line_count == 0 {
+            1
+        } else {
+            (line_count as f64).log10().floor() as usize + 1
+        };
+        let gutter_width = 1 + digits.max(1) + 3; // indicator + digits + separator
 
         let wrap_config = WrapConfig::new(viewport_width, gutter_width, true, true);
 
@@ -2192,10 +2196,14 @@ impl Editor {
             return (0, 0);
         }
 
-        // Calculate gutter width (estimate based on line count)
+        // Calculate gutter width (scales with line count: 1–9→1 digit, 10–99→2, etc.)
         let line_count = buffer.line_count().unwrap_or(1);
-        let digits = (line_count as f64).log10().floor() as usize + 1;
-        let gutter_width = 1 + digits.max(4) + 3; // indicator + digits + separator
+        let digits = if line_count == 0 {
+            1
+        } else {
+            (line_count as f64).log10().floor() as usize + 1
+        };
+        let gutter_width = 1 + digits.max(1) + 3; // indicator + digits + separator
 
         let wrap_config = WrapConfig::new(viewport_width, gutter_width, true, true);
 
@@ -2720,6 +2728,7 @@ impl Editor {
         self.mouse_state.dragging_text_selection = true;
         self.mouse_state.drag_selection_split = Some(split_id);
         self.mouse_state.drag_selection_anchor = Some(new_anchor.unwrap_or(target_position));
+        self.mouse_state.drag_selection_by_words = false; // Issue #1202: single-click = character-by-character
 
         Ok(())
     }
