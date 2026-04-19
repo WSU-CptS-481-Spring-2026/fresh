@@ -332,6 +332,10 @@ impl Editor {
         self.tab_bar_visible = self.config.editor.show_tab_bar;
         self.status_bar_visible = self.config.editor.show_status_bar;
 
+        // Sync file explorer width (clamped to match mouse resize range)
+        self.file_explorer_width_percent =
+            crate::config::clamp_file_explorer_width(self.config.file_explorer.width);
+
         // Update LSP configs
         if let Some(ref mut lsp) = self.lsp {
             for (language, lsp_config) in &self.config.lsp {

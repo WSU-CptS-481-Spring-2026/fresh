@@ -2,6 +2,10 @@
 
 Fresh includes a built-in file explorer.
 
+## Configuration
+
+The file explorer width can be configured in `file_explorer.width` (fraction of viewport, e.g. `0.3` = 30%). The value is clamped to 10%–50% at runtime, matching the range enforced when resizing with the mouse. This ensures the sidebar stays usable whether set via config or drag.
+
 *   **Toggle Sidebar:** Use `Ctrl+B` to show/hide the file explorer sidebar.
 *   **Focus:** Use `Ctrl+E` to switch focus between the file explorer and editor.
 *   **Navigation:** Use the arrow keys to move up and down the file tree.

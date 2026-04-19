@@ -95,6 +95,10 @@ impl Editor {
         // Apply the new config
         self.config = new_config.clone();
 
+        // Sync file explorer width (clamped to match mouse resize range)
+        self.file_explorer_width_percent =
+            crate::config::clamp_file_explorer_width(self.config.file_explorer.width);
+
         // Refresh cached raw user config for plugins
         self.user_config_raw = Config::read_user_config_raw(&self.working_dir);
 

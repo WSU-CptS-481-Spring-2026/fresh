@@ -1151,13 +1151,20 @@ pub struct FileExplorerConfig {
     #[serde(default)]
     pub custom_ignore_patterns: Vec<String>,
 
-    /// Width of file explorer as percentage (0.0 to 1.0)
+    /// Width of file explorer as percentage (0 to 100)
     #[serde(default = "default_explorer_width")]
+    #[schemars(range(min = 0.1, max = 0.5))]
     pub width: f32,
 }
 
 fn default_explorer_width() -> f32 {
     0.3 // 30% of screen width
+}
+
+/// Clamp file explorer width to the same range enforced by mouse resize (10%–50%).
+/// Used when applying width from config/settings to match drag behavior.
+pub fn clamp_file_explorer_width(v: f32) -> f32 {
+    v.clamp(0.1, 0.5)
 }
 
 /// Clipboard configuration
@@ -3688,6 +3695,17 @@ impl std::error::Error for ConfigError {}
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::*;
+
+    #[test]
+    fn test_clamp_file_explorer_width() {
+        assert!((clamp_file_explorer_width(0.3) - 0.3).abs() < 0.001);
+        assert!((clamp_file_explorer_width(0.1) - 0.1).abs() < 0.001);
+        assert!((clamp_file_explorer_width(0.5) - 0.5).abs() < 0.001);
+        assert!((clamp_file_explorer_width(0.05) - 0.1).abs() < 0.001, "below min should clamp to 0.1");
+        assert!((clamp_file_explorer_width(0.9) - 0.5).abs() < 0.001, "above max should clamp to 0.5");
+        assert!((clamp_file_explorer_width(0.0) - 0.1).abs() < 0.001);
+    }
 
     #[test]
     fn test_default_config() {

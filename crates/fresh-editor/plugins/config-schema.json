@@ -142,7 +142,7 @@
     "active_keybinding_map": {
       "description": "Active keybinding map name",
       "$ref": "#/$defs/KeybindingMapOptions",
-      "default": "default"
+      "default": "macos"
     },
     "languages": {
       "description": "Per-language configuration overrides (tab size, formatters, etc.)",
@@ -668,9 +668,11 @@
           "default": []
         },
         "width": {
-          "description": "Width of file explorer as percentage (0.0 to 1.0)",
+          "description": "Width of file explorer as percentage (0 to 100)",
           "type": "number",
           "format": "float",
+          "minimum": 0.1,
+          "maximum": 0.5,
           "default": 0.30000001192092896
         }
       }
@@ -1062,7 +1064,7 @@
           "default": {
             "max_memory_percent": 50,
             "max_cpu_percent": 90,
-            "enabled": true
+            "enabled": false
           }
         },
         "initialization_options": {

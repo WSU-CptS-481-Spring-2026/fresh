@@ -420,7 +420,7 @@ pub struct Editor {
     /// When true, we still render the file explorer area even if file_explorer is temporarily None
     file_explorer_sync_in_progress: bool,
 
-    /// File explorer width as percentage (0.0 to 1.0)
+    /// File explorer width as percentage (0 to 100), stored internally as 0.0–1.0
     /// This is the runtime value that can be modified by dragging the border
     file_explorer_width_percent: f32,
 
@@ -1283,7 +1283,8 @@ impl Editor {
         }
 
         // Extract config values before moving config into the struct
-        let file_explorer_width = config.file_explorer.width;
+        let file_explorer_width =
+            crate::config::clamp_file_explorer_width(config.file_explorer.width);
         let recovery_enabled = config.editor.recovery_enabled;
         let check_for_updates = config.check_for_updates;
         let show_menu_bar = config.editor.show_menu_bar;
