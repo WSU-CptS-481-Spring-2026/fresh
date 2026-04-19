@@ -264,9 +264,9 @@ fn test_cursor_position_with_large_line_numbers() {
 
     // Now verify cursor positioning is correct for the gutter width
     // In byte offset mode, gutter sized for file size (~73,000,000 bytes = 8 digits)
-    // Format: [indicator (1)] + [max(4, digits)] + [" │ " (3 chars)]
+    // Format: [indicator (1)] + [digits, min 1] + [" │ " (3 chars)]
     let digits = ((buffer_len as f64).log10().floor() as usize) + 1;
-    let expected_gutter = 1 + digits.max(4) + 3;
+    let expected_gutter = 1 + digits.max(1) + 3;
     println!("\nExpected gutter width: {expected_gutter} (1 + {digits}-digit byte offset + 3)",);
     println!("Actual gutter_width: {gutter_width}");
 
@@ -550,8 +550,8 @@ fn test_ansi_rgb_color_rendering() {
     // Get the content area start row (after menu bar and tab bar)
     let (content_row, _) = harness.content_area_rows();
 
-    // The gutter is: indicator (1) + line numbers (4) + separator (3) = 8 chars
-    let gutter_width = 8;
+    // Gutter width scales with line count (from harness)
+    let gutter_width = harness.editor().active_state().margins.left_total_width() as u16;
 
     let screen = harness.screen_to_string();
     println!("Screen content:\n{screen}");
