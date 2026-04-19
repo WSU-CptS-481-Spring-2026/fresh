@@ -2,7 +2,7 @@
 
 use crate::common::fixtures::TestFixture;
 use crate::common::harness::EditorTestHarness;
-use crossterm::event::{KeyCode, KeyModifiers};
+use crossterm::event::{KeyCode, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use std::fs;
 
 /// Test scrollbar rendering in a single split
@@ -1280,6 +1280,70 @@ fn test_drag_to_select_multiple_lines() {
     );
 }
 
+/// Triple-click selects a line; dragging extends selection line-by-line.
+#[test]
+fn test_triple_click_drag_extends_selection_by_lines() {
+    let mut harness = EditorTestHarness::new(80, 24).unwrap();
+    let content = "line one\nline two\nline three\nline four\n";
+    let _fixture = harness.load_buffer_from_text(content).unwrap();
+    harness.render().unwrap();
+
+    let (content_first_row, _) = harness.content_area_rows();
+    let col = 9_u16;
+    let row1 = content_first_row as u16;
+
+    // Two full clicks, then third mouse-down only (third completes triple-click)
+    harness.mouse_click(col, row1).unwrap();
+    harness.mouse_click(col, row1).unwrap();
+    harness
+        .send_mouse(MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: col,
+            row: row1,
+            modifiers: KeyModifiers::empty(),
+        })
+        .unwrap();
+    harness.render().unwrap();
+
+    assert!(
+        harness.has_selection(),
+        "Triple-click should select the current line"
+    );
+
+    let row4 = content_first_row as u16 + 3;
+    let steps = 8_usize;
+    for i in 1..=steps {
+        let t = i as f32 / steps as f32;
+        let r = row1 as f32 + (row4 as f32 - row1 as f32) * t;
+        harness
+            .send_mouse(MouseEvent {
+                kind: MouseEventKind::Drag(MouseButton::Left),
+                column: col,
+                row: r as u16,
+                modifiers: KeyModifiers::empty(),
+            })
+            .unwrap();
+    }
+    harness
+        .send_mouse(MouseEvent {
+            kind: MouseEventKind::Up(MouseButton::Left),
+            column: col,
+            row: row4,
+            modifiers: KeyModifiers::empty(),
+        })
+        .unwrap();
+    harness.render().unwrap();
+
+    let selected = harness.get_selected_text();
+    println!("Triple-click drag selection: {selected:?}");
+    assert!(
+        selected.contains("line one")
+            && selected.contains("line four")
+            && selected.contains('\n'),
+        "Expected multi-line selection through line four, got: {selected:?}"
+    );
+}
+
 /// Test that selection clears on mouse click
 #[test]
 fn test_click_clears_selection() {
@@ -1336,7 +1400,7 @@ fn test_shift_click_extends_selection() {
 
     let (content_first_row, _) = harness.content_area_rows();
     let row = content_first_row as u16;
-    let gutter_width = 8; // Approximate gutter width
+    let gutter_width = 5; // Approximate gutter width
 
     // Click to position cursor at start of "hello" (after gutter)
     harness.mouse_click(gutter_width, row).unwrap();
@@ -1391,7 +1455,7 @@ fn test_shift_click_can_shrink_selection() {
 
     let (content_first_row, _) = harness.content_area_rows();
     let row = content_first_row as u16;
-    let gutter_width = 8;
+    let gutter_width = 5;
 
     // Create initial selection via drag from position 5 to 15
     harness
@@ -1770,8 +1834,8 @@ fn test_double_click_requires_same_position() {
     let row = content_first_row as u16;
 
     // Get gutter width so we know where text starts
-    // Gutter is typically around 8 characters (line numbers + separator)
-    let gutter_width = 8;
+    // Gutter is indicator + line digits + separator (often 5 for small buffers)
+    let gutter_width = 5;
 
     // Position A: "hello" starts at column gutter_width
     let pos_a_col = gutter_width + 2; // Over "hello"

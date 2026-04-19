@@ -411,7 +411,7 @@ fn test_block_selection_renders_rectangular() {
     // Get content area bounds
     let (content_first_row, _content_last_row) = harness.content_area_rows();
     let first_line_row = content_first_row as u16;
-    let gutter_width = 8; // " " + "   1" + " │ "
+    let gutter_width = 5; // " " + "1" + " │ "
 
     // Check that characters in the block region have selection background
     // Block should be columns 2-4 on lines 0 and 1

@@ -1,397 +1,486 @@
-# Design: "Load Plugin from Buffer" Command
+# Design: Ctrl+Right-Click Character Theme Info Popup
 
-## Goal
+## Overview
 
-Allow users to take the code in the current editor buffer and run it as a plugin — with the full plugin API available (editor commands, hooks, overlays, etc.) — without saving it to the plugins directory or "installing" it. This streamlines plugin development and enables ad-hoc scripting.
+When the user Ctrl+Right-Clicks any rendered character on screen, a popup appears showing which theme key(s) contribute to that character's appearance (foreground, background, syntax highlight category). The popup includes a clickable button to open the Theme Editor plugin and jump directly to that key.
 
-## Current Architecture (Summary)
+---
 
-The existing plugin loading pipeline:
+## Architecture
 
-1. **Discovery**: Scan `~/.config/fresh/plugins/` for `.ts`/`.js` files
-2. **Transform**: `load_module_with_source()` reads the file from disk, then:
-   - If ES imports → `bundle_module()` (resolves local deps, bundles into IIFE)
-   - If ES exports only → `strip_imports_and_exports()` + `transpile_typescript()` if `.ts`
-   - Plain code → `transpile_typescript()` if `.ts`, else run directly
-3. **Execution**: `execute_js(code, source_name)` creates a per-plugin QuickJS `Context`, sets up the editor API (`getEditor()`, hooks, commands), wraps code in IIFE, and evals it
-4. **Registration**: Plugin is stored in `HashMap<String, TsPluginInfo>` with name, path, enabled flag
+### 1. Theme Key Resolution: Screen Position → Theme Key(s)
 
-Key types/channels:
-- `PluginRequest` enum sent over `mpsc::UnboundedSender` to plugin thread
-- `PluginThreadHandle` provides blocking methods (`load_plugin`, `unload_plugin`, `reload_plugin`)
-- `PluginManager` (in `fresh-editor`) wraps `PluginThreadHandle`
-- `PluginCommand` enum (in `fresh-core`) for plugin→editor communication
+Every pixel on screen gets its color from a specific theme field. We need a function that, given a screen `(col, row)`, returns the **theme key path(s)** responsible for that character's styling.
 
-## Design Alternatives
+**The resolution works by determining which UI region the click falls in:**
 
-### Alternative A: New `PluginRequest::LoadPluginFromSource` (Recommended)
-
-Add a new variant to `PluginRequest` that accepts source code directly instead of a file path:
-
-```
-PluginRequest::LoadPluginFromSource {
-    source: String,          // The buffer contents
-    name: String,            // Synthetic plugin name (e.g. "buffer-plugin" or derived from buffer)
-    source_type: SourceType, // Ts or Js, inferred from buffer language
-    response: oneshot::Sender<Result<()>>,
-}
-```
-
-**New function** `load_plugin_from_source_internal()` — mirrors `load_plugin_internal()` but:
-- Accepts source code as a `String` instead of reading from disk
-- Skips i18n file loading (no companion files for a buffer)
-- Runs the same transform pipeline (transpile TS, strip exports, etc.)
-- Calls `execute_js()` with a synthetic source name like `"<buffer>"` or `"buffer-plugin.ts"`
-- Registers in the plugins HashMap so it can be unloaded/reloaded later
-
-**Editor side**: New `Action::LoadPluginFromBuffer` triggers:
-1. Read current buffer contents via `self.active_state().buffer.slice_bytes(0..total_bytes)`
-2. Detect language (TS vs JS) from buffer's language mode or file extension
-3. Send `PluginRequest::LoadPluginFromSource` to plugin thread
-4. Show status message on success/failure
-
-**Command palette entry**: Register as "Load Plugin from Buffer" in `COMMAND_DEFS`.
-
-**Pros**:
-- Clean separation: new code path purpose-built for source-from-memory
-- No temp files, no filesystem side effects
-- Plugin can be unloaded cleanly (it's registered with a name)
-- Follows existing patterns exactly
-
-**Cons**:
-- Some code duplication with `load_plugin_internal` (mitigated by extracting shared transform logic)
-- Bundling (`bundle_module`) won't work for buffer plugins with local imports since there's no filesystem path to resolve relative imports from
-
-### Alternative B: Write to temp file, then `load_plugin()`
-
-Save the buffer to a temp file in a known location (e.g. `/tmp/fresh-buffer-plugin.ts`), then call the existing `load_plugin()` path.
-
-**Pros**:
-- Zero new code in the plugin runtime — reuses everything
-- Bundling works (temp file has a real path for import resolution)
-
-**Cons**:
-- Filesystem side effects (temp files to manage/clean up)
-- Race conditions if user runs it multiple times quickly
-- Leaks implementation detail (temp paths show up in error messages, stack traces)
-- Feels hacky — the buffer *is* the source, we shouldn't round-trip through disk
-
-### Alternative C: Plugin API method `editor.loadPluginFromSource()`
-
-Expose this as a JS API so plugins themselves can load other plugin source code. The command palette command would then be a thin wrapper.
-
-**Pros**:
-- Composable: other plugins can use it (e.g., a "plugin marketplace" plugin)
-- Consistent with the API-first design
-
-**Cons**:
-- Security concern: arbitrary code injection from plugin to plugin
-- More surface area than needed for the immediate goal
-- Can be added later on top of Alternative A
-
-## Recommended Approach: Alternative A
-
-Alternative A is the cleanest. It follows the existing architecture patterns, avoids filesystem hacks, and is straightforward to implement. Alternative C is a nice follow-up but not needed for v1.
-
-## Implementation Status
-
-All items below are **implemented and tested**:
-
-- [x] `PluginRequest::LoadPluginFromSource` variant added to `thread.rs`
-- [x] `load_plugin_from_source_internal()` function with hot-reload (unload-then-load)
-- [x] `QuickJsBackend::execute_source()` — transpile + execute source code without file I/O
-- [x] `PluginThreadHandle::load_plugin_from_source()` — blocking public API
-- [x] `PluginManager::load_plugin_from_source()` — editor-level API with `#[cfg(feature = "plugins")]`
-- [x] `Action::LoadPluginFromBuffer` in both `fresh-core` and `fresh-editor` Action enums
-- [x] Handler in `app/input.rs` — reads buffer content, detects TS/JS, calls plugin manager
-- [x] Command palette entry: `cmd.load_plugin_from_buffer` in `COMMAND_DEFS`
-- [x] `from_str` mapping: `"load_plugin_from_buffer"` in keybindings
-- [x] **Hot-reload cleanup (Phase 1)**: `QuickJsBackend::cleanup_plugin()` cleans up plugin context, event handlers, registered actions, callback contexts
-- [x] **Hot-reload cleanup (Phase 2)**: `PluginTrackedState` tracks namespaces/IDs per plugin; compensating `PluginCommand`s sent on unload for overlays, conceals, soft breaks, line indicators, virtual text, file explorer decorations, and custom contexts
-- [x] **Hot-reload cleanup (Phase 3)**: Resource cleanup on unload — kills background processes, closes virtual/composite buffers, closes terminals, removes scroll sync groups. Uses shared `AsyncResourceOwners` map for tracking async resource IDs across threads.
-- [x] **E2E tests**: `test_load_plugin_from_buffer_registers_command` and `test_load_plugin_from_buffer_hot_reload_cleanup` in `tests/e2e/plugins/load_from_buffer.rs`
-
-## Detailed Design
-
-### 1. Plugin Runtime Layer (`fresh-plugin-runtime`)
-
-**`thread.rs`** — Add to `PluginRequest` enum:
-```rust
-LoadPluginFromSource {
-    source: String,
-    name: String,
-    is_typescript: bool,
-    response: oneshot::Sender<Result<()>>,
-}
-```
-
-Add `PluginThreadHandle::load_plugin_from_source()` method (blocking, like `load_plugin()`).
-
-Add `load_plugin_from_source_internal()` async fn:
-```rust
-async fn load_plugin_from_source_internal(
-    runtime: Rc<RefCell<QuickJsBackend>>,
-    plugins: &mut HashMap<String, TsPluginInfo>,
-    source: &str,
-    name: &str,
-    is_typescript: bool,
-) -> Result<()> {
-    // If plugin with this name already loaded, unload first (hot-reload semantics)
-    if plugins.contains_key(name) {
-        unload_plugin_internal(Rc::clone(&runtime), plugins, name)?;
-    }
-
-    let js_code = if is_typescript {
-        // Strip exports if present, then transpile
-        let cleaned = if has_es_module_syntax(source) {
-            strip_imports_and_exports(source)
-        } else {
-            source.to_string()
-        };
-        transpile_typescript(&cleaned, &format!("{}.ts", name))?
-    } else {
-        if has_es_module_syntax(source) {
-            strip_imports_and_exports(source)
-        } else {
-            source.to_string()
-        }
-    };
-
-    // Note: ES imports (import ... from ...) are NOT supported for buffer plugins
-    // since there's no filesystem path to resolve relative imports from.
-    if has_es_imports(source) {
-        tracing::warn!("Buffer plugin '{}' has ES imports which cannot be resolved. Stripping them.", name);
-    }
-
-    let source_name = format!("<buffer:{}>", name);
-    runtime.borrow_mut().execute_js(&js_code, &source_name)?;
-
-    plugins.insert(name.to_string(), TsPluginInfo {
-        name: name.to_string(),
-        path: PathBuf::from(source_name), // synthetic path
-        enabled: true,
-    });
-
-    Ok(())
-}
-```
-
-Handle the new variant in `handle_request()`.
-
-**`quickjs_backend.rs`** — Make `execute_js` `pub(crate)` (currently private) so `load_plugin_from_source_internal` can call it. Or extract the transform+execute logic into a shared helper.
-
-### 2. Plugin Manager Layer (`fresh-editor/src/services/plugins/manager.rs`)
-
-Add `PluginManager::load_plugin_from_source()`:
-```rust
-pub fn load_plugin_from_source(&self, source: &str, name: &str, is_typescript: bool) -> Result<()>
-```
-
-### 3. Editor Action (`fresh-core` + `fresh-editor`)
-
-Add `Action::LoadPluginFromBuffer` to the Action enum.
-
-In `input.rs` handler:
-```rust
-Action::LoadPluginFromBuffer => {
-    let state = self.active_state();
-    let buffer = &state.buffer;
-    let content = String::from_utf8_lossy(&buffer.slice_bytes(0..buffer.total_bytes())).to_string();
-
-    // Determine if TypeScript based on file extension or language mode
-    let is_ts = buffer.file_path()
-        .and_then(|p| p.extension())
-        .and_then(|e| e.to_str())
-        .map(|e| e == "ts" || e == "tsx")
-        .unwrap_or(true); // default to TS (superset of JS)
-
-    // Derive plugin name from buffer filename
-    let name = buffer.file_path()
-        .and_then(|p| p.file_name())
-        .and_then(|s| s.to_str())
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| "buffer-plugin".to_string());
-
-    match self.plugin_manager.load_plugin_from_source(&content, &name, is_ts) {
-        Ok(()) => self.set_status(format!("Plugin '{}' loaded from buffer", name)),
-        Err(e) => self.set_status(format!("Failed to load plugin: {}", e)),
-    }
-}
-```
-
-### 4. Command Palette Entry (`commands.rs`)
-
-```rust
-CommandDef {
-    name_key: "cmd.load_plugin_from_buffer",
-    desc_key: "cmd.load_plugin_from_buffer_desc",
-    action: || Action::LoadPluginFromBuffer,
-    contexts: &[KeyContext::Normal],
-    custom_contexts: &[],
-}
-```
-
-## Key Design Decisions & Tradeoffs
-
-### Hot-reload semantics
-When the user runs "Load Plugin from Buffer" on a buffer they've already loaded, we **unload the previous version first** then load the new one. This is critical for the dev workflow — edit, re-run, see changes. The alternative (error on duplicate name) would be frustrating.
-
-### Plugin naming
-We use the buffer's filename directly as the plugin name (e.g., `my_plugin.ts`). For unsaved buffers, we fall back to `buffer-plugin`. This means:
-- Named buffers get stable identities across reloads (good for hot-reload)
-- Multiple unnamed buffers would collide — acceptable tradeoff for v1
-
-### No import resolution
-Buffer plugins can't use `import ... from './helper'` because there's no filesystem context for relative path resolution. This is an inherent limitation of in-memory evaluation. Workarounds for the future:
-- If the buffer has a file path, we could use its directory for resolution
-- We could support a "save and load" variant that saves first
-
-### TypeScript default
-If we can't determine the language, we default to TypeScript since TS is a superset of JS and the transpiler handles plain JS fine.
-
-### No i18n support
-Buffer plugins skip `.i18n.json` loading — ad-hoc plugins don't need localization. This simplifies the implementation.
-
-## Hot-Reload: Plugin State Cleanup Audit
-
-Hot-reload = unload previous version, then load new version. The current `unload_plugin_internal()` (`thread.rs:1270-1294`) only cleans up **2 of 20+** state types. This section catalogs every piece of plugin-created state, whether it's cleaned up, and what we need to fix.
-
-### Current unload implementation
-
-```rust
-fn unload_plugin_internal(...) {
-    plugins.remove(name);                          // ✅ plugin registry
-    runtime.services.unregister_plugin_strings();  // ✅ i18n strings
-    runtime.services.unregister_commands_by_plugin(); // ✅ commands (CommandRegistry)
-}
-```
-
-That's it. Everything else leaks.
-
-### Complete state inventory
-
-#### TIER 1 — Plugin runtime state (QuickJsBackend-owned, in-process)
-
-These are `Rc<RefCell<HashMap<...>>>` fields on `QuickJsBackend`. Cleanup is easy — just filter/remove by plugin name.
-
-| State | Storage | Cleaned? | Hot-reload impact if leaked |
-|---|---|---|---|
-| **Plugin JS Context** | `plugin_contexts: HashMap<String, Context>` | ❌ | Memory leak. On reload, `execute_js` checks `plugin_contexts` by name — if found, **reuses the old context**. Old globals, old closures, old handler references all persist. New code runs in old context. **This is the worst leak** — it means hot-reload doesn't actually start fresh. |
-| **Event handlers** | `event_handlers: HashMap<String, Vec<PluginHandler>>` | ❌ | Old handlers still fire on hooks. After reload, both old AND new handlers run. Duplicate side effects. |
-| **Registered actions** | `registered_actions: HashMap<String, PluginHandler>` | ❌ | Old action handlers still reference old plugin name. Commands registered by `registerCommand()` are cleaned (CommandRegistry), but actions registered by `defineMode()` bindings leak. Stale action dispatch. |
-| **Callback contexts** | `callback_contexts: HashMap<u64, String>` | ❌ | Old in-flight async callbacks (delay, spawnProcess, etc.) still reference old plugin. If they resolve after unload, they try to dispatch into the old (still-alive due to context leak) context. Minor — callbacks drain naturally. |
-| **Background process handles** | `background_process_handles` (if tracked) | ❌ | Processes keep running. On reload, plugin spawns new processes. Old ones are orphaned. |
-
-#### TIER 2 — Editor-side state (sent via PluginCommand channel, owned by editor)
-
-These are created by sending `PluginCommand` variants. The plugin runtime doesn't own them — the editor does. Cleanup requires either (a) sending compensating `PluginCommand`s during unload, or (b) the editor tracking plugin ownership.
-
-**Namespace-based state** — Plugins pass an arbitrary `namespace: String` to these APIs. The namespace is NOT automatically prefixed with the plugin name; it's whatever the plugin chooses (e.g., `"git-gutter"`, `"diagnostics"`). This means we can't generically "clear all state for plugin X" on the editor side without either:
-- Convention: auto-prefix namespace with plugin name at the API level
-- Tracking: maintain a `plugin_name → Vec<namespace>` map in the runtime
-
-| State | Creation API | Cleanup API exists? | Cleaned on unload? | Impact |
-|---|---|---|---|---|
-| **Overlays** | `addOverlay(bufferId, namespace, ...)` | `clearNamespace(bufferId, ns)` exists | ❌ | Stale syntax highlighting, diagnostics highlights persist visually |
-| **Conceals** | `addConceal(bufferId, namespace, ...)` | `clearConcealNamespace(bufferId, ns)` exists | ❌ | Text remains hidden/replaced. Content appears corrupted. |
-| **Soft breaks** | `addSoftBreak(bufferId, namespace, ...)` | `clearSoftBreakNamespace(bufferId, ns)` exists | ❌ | Line wrapping artifacts |
-| **Virtual text** | `addVirtualText(bufferId, id, ...)` | `removeVirtualText(bufferId, id)` exists | ❌ | Stale inline hints/swatches remain |
-| **Virtual lines** | `addVirtualLine(bufferId, ..., namespace, ...)` | `clearVirtualLineNamespace(bufferId, ns)` exists | ❌ | Stale git blame, inline docs remain |
-| **Line indicators** | `setLineIndicator(bufferId, line, namespace, ...)` | `clearLineIndicators(bufferId, ns)` exists | ❌ | Stale gutter markers (git, breakpoints) |
-| **View transforms** | `submitViewTransform(bufferId, splitId, ...)` | `clearViewTransform(bufferId, splitId)` exists | ❌ | Corrupted custom rendering persists |
-| **Layout hints** | `setLayoutHints(bufferId, splitId, ...)` | No explicit clear | ❌ | Stale layout config |
-| **File explorer decorations** | `setFileExplorerDecorations(namespace, ...)` | Overwrite with empty = clear | ❌ | Stale file tree icons/colors |
-| **Custom contexts** | `setContext(name, active)` | `setContext(name, false)` | ❌ | Stale keybinding conditions; commands visible/hidden incorrectly |
-| **Modes** | `defineMode(name, ...)` | No explicit undefine | ❌ | Mode persists; if plugin re-registers same name, likely overwrites (ok for hot-reload) |
-| **Menu items** | `addMenu(...)`, `addMenuItem(...)` | `removeMenuItem(...)` exists | ❌ | Stale menu items; clicking runs nonexistent handler |
-| **Scroll sync groups** | `createScrollSyncGroup(groupId, ...)` | `removeScrollSyncGroup(groupId)` exists | ❌ | Phantom scroll syncing persists |
-| **Grammars** | `registerGrammar(language, ...)` | No explicit unregister | ❌ | Grammar persists; re-register on reload overwrites (likely ok) |
-| **Language configs** | `registerLanguageConfig(language, ...)` | No explicit unregister | ❌ | Config persists; re-register overwrites (likely ok) |
-| **LSP server configs** | `registerLspServer(language, ...)` | No explicit unregister | ❌ | Config persists; re-register overwrites (likely ok) |
-
-**Buffer-creating APIs** — These create real editor buffers. No plugin ownership tracking exists.
-
-| State | Creation API | Cleaned on unload? | Impact |
-|---|---|---|---|
-| **Virtual buffers** | `createVirtualBuffer(...)` | ❌ | Buffers persist as open tabs. On reload, plugin creates new ones → tab accumulation. |
-| **Composite buffers** | `createCompositeBuffer(...)` | ❌ | Same as virtual buffers |
-| **Terminals** | `createTerminal(...)` | ❌ | Terminal processes keep running; new ones created on reload |
-
-### Recommended cleanup strategy
-
-#### Phase 1: Must-have for hot-reload (runtime-side, easy)
-
-These are all in-process, no editor coordination needed. Fix `unload_plugin_internal` to also:
-
-```rust
-fn unload_plugin_internal(...) {
-    // ... existing cleanup ...
-
-    let rt = runtime.borrow();
-
-    // 1. Remove plugin's JS context (CRITICAL — without this, reload reuses old context)
-    rt.plugin_contexts.borrow_mut().remove(name);
-
-    // 2. Remove event handlers for this plugin
-    for handlers in rt.event_handlers.borrow_mut().values_mut() {
-        handlers.retain(|h| h.plugin_name != name);
-    }
-
-    // 3. Remove registered actions for this plugin
-    rt.registered_actions.borrow_mut().retain(|_, h| h.plugin_name != name);
-
-    // 4. Remove callback contexts for this plugin
-    rt.callback_contexts.borrow_mut().retain(|_, pname| pname != name);
-}
-```
-
-**Without at least items 1-3, hot-reload is fundamentally broken.** Item 1 is the most critical — if the old context survives, `execute_js` will reuse it and new code runs alongside old closures/handlers.
-
-#### Phase 2: Important for visual correctness (namespace tracking)
-
-Add a `plugin_namespaces: Rc<RefCell<HashMap<String, Vec<String>>>>` to `JsEditorApi` that records every namespace string a plugin uses. In each `addOverlay`, `addConceal`, `addSoftBreak`, `addVirtualLine`, `setLineIndicator`, `setFileExplorerDecorations` call, record `plugin_name → namespace`.
-
-On unload, send compensating commands for each tracked namespace:
-- `ClearNamespace` for overlays
-- `ClearConcealNamespace` for conceals
-- `ClearSoftBreakNamespace` for soft breaks
-- `ClearVirtualLineNamespace` for virtual lines
-- `ClearLineIndicators` (per namespace) for line indicators
-- `SetFileExplorerDecorations` with empty list for file explorer
-
-Also track `plugin_name → Vec<virtual_text_id>` for virtual text cleanup, and `plugin_name → Vec<context_name>` for context deactivation.
-
-This requires the cleanup to send `PluginCommand`s, which means the unload function needs access to the `command_sender`. Currently `unload_plugin_internal` has access to the runtime (which has `command_sender` on `JsEditorApi`), so this is feasible.
-
-#### Phase 3: Nice-to-have (resource cleanup)
-
-- Kill background processes on unload (track `plugin_name → Vec<process_id>`)
-- Close virtual/composite buffers created by plugin (track `plugin_name → Vec<BufferId>`)
-- Close terminals created by plugin
-- Remove scroll sync groups (track `plugin_name → Vec<group_id>`)
-- Remove menu items (requires menu tracking infrastructure)
-
-These are less critical because:
-- Processes/terminals are visible to the user (they can close them manually)
-- Menu items and scroll sync groups are relatively rare in ad-hoc plugins
-- Grammars/language configs/LSP configs overwrite on re-registration (idempotent)
-
-### Summary: What's safe to defer
-
-| State | Safe to defer? | Why |
+| Screen Region | How to Detect | Theme Key(s) |
 |---|---|---|
-| Grammars, language configs, LSP configs | ✅ Yes | Re-registration overwrites; idempotent |
-| Modes | ✅ Yes | `defineMode` with same name overwrites bindings |
-| View state | ✅ Yes | Persisted per-buffer; doesn't cause errors |
-| Terminals, virtual buffers | ⚠️ Mostly | User can close manually; accumulation is annoying but not broken |
-| Menu items | ⚠️ Mostly | Stale items are confusing but rare for ad-hoc plugins |
-| Everything in Phase 1 | ❌ No | Hot-reload is broken without these |
-| Overlays/conceals/virtual text | ⚠️ Depends on plugin | If plugin re-clears its namespaces on init (common pattern), it self-heals. But if it doesn't, visual corruption persists. |
+| **Editor content** (syntax-highlighted text) | `split_areas` hit test → `ViewLineMapping` → byte position → `HighlightCategory` | `syntax.{keyword,string,comment,...}` for fg, `editor.bg` for bg |
+| **Editor content** (unhighlighted text) | Same, but no highlight span at byte position | `editor.fg`, `editor.bg` |
+| **Line numbers** | Column falls within gutter width of a split | `editor.line_number_fg`, `editor.line_number_bg` |
+| **Selection** | Byte position falls within selection range | `editor.selection_bg` (overrides bg) |
+| **Current line** | Row matches cursor line | `editor.current_line_bg` (overrides bg) |
+| **Tab bar (active)** | `tab_layouts` hit test → active tab | `ui.tab_active_fg`, `ui.tab_active_bg` |
+| **Tab bar (inactive)** | `tab_layouts` hit test → inactive tab | `ui.tab_inactive_fg`, `ui.tab_inactive_bg` |
+| **Menu bar** | `menu_layout` hit test | `ui.menu_fg`, `ui.menu_bg` |
+| **Status bar** | `status_bar_area` hit test | `ui.status_bar_fg`, `ui.status_bar_bg` |
+| **Popup** | `popup_areas` hit test | `ui.popup_text_fg`, `ui.popup_bg` |
+| **Search match** | Byte position in search match ranges | `search.bg`, `search.fg` |
+| **Diagnostic underline** | Byte position in diagnostic range | `diagnostic.{error,warning,info,hint}_fg` |
+| **Split separator** | `separator_areas` hit test | `ui.split_separator_fg` |
+| **Scrollbar** | Scrollbar area hit test | `ui.scrollbar_track_fg` or `ui.scrollbar_thumb_fg` |
+| **File explorer** | `file_explorer_area` hit test | `editor.fg`, `editor.bg` |
 
-## Future Enhancements
+#### New Type: `ThemeKeyInfo`
 
-1. **"Save and Load Plugin"** variant that saves the buffer first, then loads via the file-based path (enabling import resolution)
-2. **Plugin API exposure** (`editor.loadPluginFromSource()`) for programmatic use
-3. **Auto-reload on save** — watch the buffer for saves and auto-reload the plugin
-4. **Plugin REPL** — evaluate selected text as plugin code (even more ad-hoc)
-5. **Error overlay** — show transpile/runtime errors inline in the buffer
+```rust
+/// Information about which theme key(s) style a specific screen position
+#[derive(Debug, Clone)]
+pub struct ThemeKeyInfo {
+    /// The foreground theme key path (e.g., "syntax.keyword", "editor.fg")
+    pub fg_key: Option<String>,
+    /// The background theme key path (e.g., "editor.bg", "editor.selection_bg")
+    pub bg_key: Option<String>,
+    /// Human-readable description of the UI region
+    pub region: String,
+    /// The actual foreground color value currently applied
+    pub fg_color: Option<Color>,
+    /// The actual background color value currently applied
+    pub bg_color: Option<Color>,
+    /// For syntax highlights: the HighlightCategory name
+    pub syntax_category: Option<String>,
+}
+```
+
+#### New Function: `resolve_theme_key_at`
+
+Add to `Editor` (in a new `theme_inspect.rs` module):
+
+```rust
+fn resolve_theme_key_at(&self, col: u16, row: u16) -> Option<ThemeKeyInfo> {
+    let theme = &self.theme;
+
+    // 1. Check status bar area
+    if let Some((bar_row, bar_x, bar_width)) = self.cached_layout.status_bar_area {
+        if row == bar_row && col >= bar_x && col < bar_x + bar_width {
+            return Some(ThemeKeyInfo {
+                fg_key: Some("ui.status_bar_fg".into()),
+                bg_key: Some("ui.status_bar_bg".into()),
+                region: "Status Bar".into(),
+                fg_color: Some(theme.status_bar_fg),
+                bg_color: Some(theme.status_bar_bg),
+                syntax_category: None,
+            });
+        }
+    }
+
+    // 2. Check menu bar
+    if let Some(ref menu_layout) = self.cached_layout.menu_layout {
+        if point_in_rect(col, row, menu_layout.bar_area) {
+            return Some(ThemeKeyInfo {
+                fg_key: Some("ui.menu_fg".into()),
+                bg_key: Some("ui.menu_bg".into()),
+                region: "Menu Bar".into(),
+                fg_color: Some(theme.menu_fg),
+                bg_color: Some(theme.menu_bg),
+                syntax_category: None,
+            });
+        }
+    }
+
+    // 3. Check tab bars (active vs inactive)
+    for (split_id, tab_layout) in &self.cached_layout.tab_layouts {
+        if let Some(hit) = tab_layout.hit_test(col, row) {
+            let (is_active, buffer_id) = match hit { /* determine active state */ };
+            let (fg_key, bg_key, fg_color, bg_color) = if is_active {
+                ("ui.tab_active_fg", "ui.tab_active_bg",
+                 theme.tab_active_fg, theme.tab_active_bg)
+            } else {
+                ("ui.tab_inactive_fg", "ui.tab_inactive_bg",
+                 theme.tab_inactive_fg, theme.tab_inactive_bg)
+            };
+            return Some(ThemeKeyInfo { fg_key: Some(fg_key.into()), ... });
+        }
+    }
+
+    // 4. Check split separators
+    for &(_, _, sep_x, sep_y, sep_len) in &self.cached_layout.separator_areas {
+        // ... hit test ...
+    }
+
+    // 5. Check editor content areas (the main case)
+    for &(split_id, buffer_id, content_rect, ..) in &self.cached_layout.split_areas {
+        if !point_in_rect(col, row, content_rect) { continue; }
+
+        let gutter_width = /* get from buffer metadata */;
+        let rel_col = col - content_rect.x;
+
+        if rel_col < gutter_width {
+            return Some(ThemeKeyInfo {
+                fg_key: Some("editor.line_number_fg".into()),
+                bg_key: Some("editor.line_number_bg".into()),
+                region: "Line Numbers".into(),
+                fg_color: Some(theme.line_number_fg),
+                bg_color: Some(theme.line_number_bg),
+                syntax_category: None,
+            });
+        }
+
+        // Content area: resolve byte position via ViewLineMapping
+        let byte_pos = screen_to_buffer_position(col, row, ...);
+
+        // Look up highlight category at this byte position
+        let category = self.get_highlight_category_at(buffer_id, byte_pos);
+
+        match category {
+            Some(cat) => {
+                let (key, color) = category_to_theme_key(cat, theme);
+                return Some(ThemeKeyInfo {
+                    fg_key: Some(key.into()),
+                    bg_key: Some("editor.bg".into()),
+                    region: format!("Syntax: {}", category_display_name(cat)),
+                    fg_color: Some(color),
+                    bg_color: Some(theme.editor_bg),
+                    syntax_category: Some(category_display_name(cat).into()),
+                });
+            }
+            None => {
+                return Some(ThemeKeyInfo {
+                    fg_key: Some("editor.fg".into()),
+                    bg_key: Some("editor.bg".into()),
+                    region: "Editor Content".into(),
+                    fg_color: Some(theme.editor_fg),
+                    bg_color: Some(theme.editor_bg),
+                    syntax_category: None,
+                });
+            }
+        }
+    }
+
+    None
+}
+```
+
+**Helper for category → theme key mapping:**
+
+```rust
+fn category_to_theme_key(cat: HighlightCategory, theme: &Theme) -> (&'static str, Color) {
+    match cat {
+        HighlightCategory::Keyword  => ("syntax.keyword",  theme.syntax_keyword),
+        HighlightCategory::String   => ("syntax.string",   theme.syntax_string),
+        HighlightCategory::Comment  => ("syntax.comment",  theme.syntax_comment),
+        HighlightCategory::Function => ("syntax.function", theme.syntax_function),
+        HighlightCategory::Type     => ("syntax.type",     theme.syntax_type),
+        HighlightCategory::Variable => ("syntax.variable", theme.syntax_variable),
+        HighlightCategory::Constant
+        | HighlightCategory::Number
+        | HighlightCategory::Attribute => ("syntax.constant", theme.syntax_constant),
+        HighlightCategory::Operator
+        | HighlightCategory::Property => ("syntax.operator", theme.syntax_operator),
+    }
+}
+```
+
+### 2. Retrieving the HighlightCategory at a Byte Position
+
+The highlight engine currently produces `HighlightSpan` with resolved `Color` values, but for this feature we need the **category** (to know the theme key name). The internal `CachedSpan` stores the category but it's not exposed.
+
+**Approach: Add a `category` field to `HighlightSpan`**
+
+Currently:
+```rust
+pub struct HighlightSpan {
+    pub range: Range<usize>,
+    pub color: Color,
+}
+```
+
+Change to:
+```rust
+pub struct HighlightSpan {
+    pub range: Range<usize>,
+    pub color: Color,
+    pub category: Option<HighlightCategory>,  // NEW
+}
+```
+
+This is populated during `resolve_spans()` in `highlighter.rs`, which already knows the `CachedSpan.category`. The `Option` accounts for spans injected by other sources (ANSI, textmate) that don't have a category.
+
+Then add a lookup function:
+
+```rust
+impl Highlighter {
+    /// Get the highlight category at a byte position (for theme inspection)
+    pub fn category_at(&self, byte_pos: usize) -> Option<HighlightCategory> {
+        self.cached_spans.iter().find_map(|span| {
+            if span.range.contains(&byte_pos) {
+                Some(span.category)
+            } else {
+                None
+            }
+        })
+    }
+}
+```
+
+### 3. Intercepting Ctrl+Right-Click
+
+In `mouse_input.rs`, the current handler for `MouseEventKind::Down(MouseButton::Right)` calls `handle_right_click()` which only handles tab context menus.
+
+**Add modifier detection:**
+
+```rust
+MouseEventKind::Down(MouseButton::Right) => {
+    if mouse_event.modifiers.contains(KeyModifiers::CONTROL) {
+        // Ctrl+Right-Click → theme info popup
+        self.show_theme_info_popup(col, row)?;
+    } else {
+        // Normal right-click → existing tab context menu
+        self.handle_right_click(col, row)?;
+    }
+    needs_render = true;
+}
+```
+
+### 4. The Theme Info Popup
+
+**New state field on `Editor`:**
+```rust
+pub(super) theme_info_popup: Option<ThemeInfoPopup>,
+```
+
+```rust
+#[derive(Debug, Clone)]
+pub struct ThemeInfoPopup {
+    /// Screen position where popup appears
+    pub position: (u16, u16),
+    /// Resolved theme key information
+    pub info: ThemeKeyInfo,
+    /// Whether the "Open in Theme Editor" button is highlighted
+    pub button_highlighted: bool,
+}
+```
+
+**Popup visual design (rendered as a bordered box, ~34 chars wide):**
+
+```
+┌─ Theme Info ─────────────────┐
+│ Region: Syntax Highlight     │
+│                              │
+│ Foreground: syntax.keyword   │
+│   ▉ RGB(86, 156, 214)       │
+│   Category: Keyword          │
+│                              │
+│ Background: editor.bg        │
+│   ▉ RGB(30, 30, 30)         │
+│                              │
+│ ► Open in Theme Editor       │
+└──────────────────────────────┘
+```
+
+The `▉` characters are rendered with the actual theme color applied as foreground, serving as inline color swatches.
+
+**Sizing:** ~34 chars wide, ~12 rows tall.
+
+**Positioning:** Use `clamp_rect_to_bounds()` (already exists in `popup.rs`) to keep within terminal. Position below-right of click, flip to above/left if near edges.
+
+**Rendering:** Render in the main render pass, on top of everything (after popups, before nothing). Uses existing theme popup colors (`popup_bg`, `popup_border_fg`, `popup_text_fg`) for the popup itself.
+
+```rust
+fn render_theme_info_popup(frame: &mut Frame, popup: &ThemeInfoPopup, theme: &Theme) {
+    let info = &popup.info;
+
+    let mut lines = vec![];
+    lines.push(Line::from(format!(" Region: {}", info.region)));
+    lines.push(Line::from(""));
+
+    if let Some(ref fg_key) = info.fg_key {
+        lines.push(Line::from(format!(" Foreground: {}", fg_key)));
+        if let Some(color) = info.fg_color {
+            let (r, g, b) = color_to_rgb(color).unwrap_or((0, 0, 0));
+            lines.push(Line::from(vec![
+                Span::raw("   "),
+                Span::styled("▉ ", Style::default().fg(color)),
+                Span::raw(format!("RGB({}, {}, {})", r, g, b)),
+            ]));
+        }
+        if let Some(ref cat) = info.syntax_category {
+            lines.push(Line::from(format!("   Category: {}", cat)));
+        }
+    }
+
+    lines.push(Line::from(""));
+    if let Some(ref bg_key) = info.bg_key {
+        lines.push(Line::from(format!(" Background: {}", bg_key)));
+        if let Some(color) = info.bg_color {
+            let (r, g, b) = color_to_rgb(color).unwrap_or((0, 0, 0));
+            lines.push(Line::from(vec![
+                Span::raw("   "),
+                Span::styled("▉ ", Style::default().fg(color)),
+                Span::raw(format!("RGB({}, {}, {})", r, g, b)),
+            ]));
+        }
+    }
+
+    lines.push(Line::from(""));
+    let button_style = if popup.button_highlighted {
+        Style::default().fg(theme.popup_selection_fg).bg(theme.popup_selection_bg)
+    } else {
+        Style::default().fg(theme.popup_text_fg)
+    };
+    lines.push(Line::from(Span::styled(" ► Open in Theme Editor ", button_style)));
+
+    let width = 34u16;
+    let height = lines.len() as u16 + 2; // +2 for border
+
+    let rect = clamp_rect_to_bounds(
+        Rect::new(popup.position.0, popup.position.1, width, height),
+        frame.area(),
+    );
+
+    frame.render_widget(Clear, rect);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(theme.popup_border_fg))
+        .title(" Theme Info ")
+        .style(Style::default().bg(theme.popup_bg).fg(theme.popup_text_fg));
+    let paragraph = Paragraph::new(lines).block(block);
+    frame.render_widget(paragraph, rect);
+}
+```
+
+**Dismissal:**
+- Any click outside the popup → close it
+- Escape key → close it
+- Click on "Open in Theme Editor" button → open theme editor at that key, close popup
+- Any other key → close it
+
+### 5. "Open in Theme Editor" Button
+
+When clicked, this needs to:
+
+1. **Close the theme info popup**
+2. **Store the target theme key** for the theme editor to pick up
+3. **Execute the `open_theme_editor` plugin action**
+
+**Implementation approach: Use a temporary editor variable**
+
+In Rust, when the button is clicked:
+```rust
+fn open_theme_editor_at_key(&mut self, key: &str) {
+    // Store jump target for the theme editor plugin to read
+    self.theme_inspect_jump_key = Some(key.to_string());
+    // Trigger the theme editor open command
+    self.plugin_manager.execute_action_async("open_theme_editor");
+}
+```
+
+The plugin API needs a way to read this. Options:
+- **Best option:** Add `editor.getVariable(key)` / `editor.setVariable(key, value)` to the plugin API if it doesn't exist, or use the existing `editor.getConfig()` mechanism.
+- **Simpler option:** The Rust side dispatches a custom event/hook that the plugin listens for: `editor.onCustomEvent("theme_inspect_jump", (key) => scrollToField(key))`.
+
+In `theme_editor.ts`, modify the open function:
+```typescript
+globalThis.open_theme_editor = async function(): Promise<void> {
+    // ... existing open logic ...
+
+    // After opening, check if there's a jump target
+    const jumpTarget = editor.getVariable("theme_inspect_jump_key");
+    if (jumpTarget) {
+        editor.setVariable("theme_inspect_jump_key", null);
+        // Find and navigate to the field matching this key
+        scrollToField(jumpTarget);
+    }
+};
+
+function scrollToField(key: string): void {
+    // Map theme key path to display entry index
+    // e.g., "syntax.keyword" → find entry with path "syntax.keyword"
+    const idx = state.displayEntries.findIndex(e =>
+        !e.isSection && e.path === key
+    );
+    if (idx >= 0) {
+        state.cursorIndex = idx;
+        ensureCursorVisible();
+        refreshDisplay();
+    }
+}
+```
+
+### 6. Mouse Interaction with the Popup
+
+The popup needs mouse handling for:
+- **Hovering over the button** → highlight it (`button_highlighted = true`)
+- **Clicking the button** → trigger theme editor open
+- **Clicking outside** → dismiss
+
+In `handle_mouse_click`:
+```rust
+// Check theme info popup first (before other click handling)
+if let Some(ref popup) = self.theme_info_popup {
+    let popup_rect = /* compute rect from popup.position + dimensions */;
+    if point_in_rect(col, row, popup_rect) {
+        // Check if click is on the button row
+        let button_row = popup.position.1 + popup_height - 2; // second-to-last row
+        if row == button_row {
+            let key = popup.info.fg_key.clone().or(popup.info.bg_key.clone());
+            self.theme_info_popup = None;
+            if let Some(key) = key {
+                self.open_theme_editor_at_key(&key);
+            }
+            return Ok(());
+        }
+        // Click inside popup but not on button — ignore
+        return Ok(());
+    } else {
+        // Click outside popup — dismiss
+        self.theme_info_popup = None;
+    }
+}
+```
+
+For hover (in `MouseEventKind::Moved`):
+```rust
+if let Some(ref mut popup) = self.theme_info_popup {
+    let button_row = /* ... */;
+    popup.button_highlighted = row == button_row
+        && col >= popup.position.0
+        && col < popup.position.0 + popup_width;
+}
+```
+
+### 7. File Changes Summary
+
+| File | Change |
+|---|---|
+| `crates/fresh-editor/src/primitives/highlight_types.rs` | Add `category: Option<HighlightCategory>` to `HighlightSpan` |
+| `crates/fresh-editor/src/primitives/highlighter.rs` | Populate `category` during span resolution; add `category_at()` |
+| `crates/fresh-editor/src/primitives/highlight_engine.rs` | Update `HighlightSpan` construction to include category |
+| `crates/fresh-editor/src/app/types.rs` | Add `ThemeKeyInfo`, `ThemeInfoPopup` structs |
+| **NEW** `crates/fresh-editor/src/app/theme_inspect.rs` | `resolve_theme_key_at()`, `show_theme_info_popup()`, `render_theme_info_popup()`, `category_to_theme_key()` |
+| `crates/fresh-editor/src/app/mod.rs` | Add `theme_info_popup: Option<ThemeInfoPopup>` field, `mod theme_inspect;` |
+| `crates/fresh-editor/src/app/mouse_input.rs` | Ctrl+Right-Click detection, popup click/hover handling |
+| `crates/fresh-editor/src/app/input.rs` | Escape key dismisses popup |
+| `crates/fresh-editor/src/app/render.rs` | Call `render_theme_info_popup()` in the render pipeline |
+| `crates/fresh-editor/plugins/theme_editor.ts` | Read jump target, add `scrollToField()` function |
+| `crates/fresh-editor/tests/e2e/theme_inspect.rs` | E2E test: Ctrl+Right-Click shows popup |
+
+### 8. Edge Cases
+
+- **Ctrl+Right-Click on empty area past EOF**: Show `editor.bg` only
+- **Ctrl+Right-Click on overlays** (search highlights, diagnostics): Show overlay theme keys as additional info in the popup
+- **Ctrl+Right-Click on fold markers**: Show fold placeholder styling info
+- **Multiple overlapping theme contributions**: Show all (e.g., selection bg overrides editor bg; syntax fg overrides editor fg)
+- **Plugin view transforms**: When a plugin overrides colors via `submitViewTransform()`, note "overridden by plugin" in the popup
+- **Terminal buffers**: Show `editor.terminal_bg`, `editor.terminal_fg`
+- **Virtual buffers** (diagnostics list, grep results): Same as editor content
+- **Popup already open**: Ctrl+Right-Click elsewhere repositions/updates the popup
+
+### 9. Testing Strategy (per CONTRIBUTING.md)
+
+1. **E2E test**: Send Ctrl+Right-Click mouse event on a known syntax-highlighted token → verify popup renders with correct theme key text
+2. **E2E test**: Send Ctrl+Right-Click on status bar → verify popup shows `ui.status_bar_*` keys
+3. **E2E test**: Click the "Open in Theme Editor" button → verify theme editor opens
+4. **Unit test**: `resolve_theme_key_at()` with mocked layout → verify correct keys for each region
+5. **Unit test**: `category_to_theme_key()` → verify all categories map correctly

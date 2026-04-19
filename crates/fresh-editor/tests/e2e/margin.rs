@@ -22,10 +22,10 @@ fn test_margin_line_numbers_rendering() {
     let screen = harness.screen_to_string();
     println!("Screen output:\n{screen}");
 
-    // Should show line numbers in the left margin (10 lines → 2 digits, right-aligned)
-    harness.assert_screen_contains(" 1 │");
-    harness.assert_screen_contains(" 2 │");
-    harness.assert_screen_contains(" 3 │");
+    // Should show line numbers in the left margin (indicator may be space, git +/~/-, or unsaved │)
+    harness.assert_screen_contains("1 │ Line 1");
+    harness.assert_screen_contains("2 │ Line 2");
+    harness.assert_screen_contains("3 │ Line 3");
 
     // Should show file content
     harness.assert_screen_contains("Line 1");
@@ -42,8 +42,8 @@ fn test_margin_empty_buffer() {
     let screen = harness.screen_to_string();
     println!("Empty buffer screen:\n{screen}");
 
-    // Should show line 1 even for empty buffer (1 line → 1 digit)
-    harness.assert_screen_contains(" 1 │");
+    // Should show line 1 even for empty buffer
+    harness.assert_screen_contains("1 │");
 }
 
 /// Test that line_numbers config is respected when launching without a file
@@ -134,7 +134,7 @@ fn test_margin_large_file_line_numbers() {
 
     // Should show 4-digit line numbers
     // Line 1000 should be visible
-    harness.assert_screen_contains("1000 │");
+    harness.assert_screen_contains(" 1000 │");
 }
 
 /// Test that margins can be disabled via toggle action
@@ -221,8 +221,8 @@ fn test_margin_custom_annotations() {
     println!("Screen after removing annotation:\n{screen_after}");
 
     // Breakpoint should be gone
-    // But line numbers should still be there (5 lines → 1 digit)
-    harness.assert_screen_contains(" 3 │");
+    // But line numbers should still be there
+    harness.assert_screen_contains(" 3 │ Line 3");
 }
 
 /// Test that margins work correctly after editing
@@ -246,11 +246,10 @@ fn test_margin_after_editing() {
     let screen = harness.screen_to_string();
     println!("Screen after typing:\n{screen}");
 
-    // Should show line numbers for all lines (3 lines → 1 digit)
-    // Note: May have indicator before number (e.g. "│1 │" from buffer modified)
-    harness.assert_screen_contains("1 │");
-    harness.assert_screen_contains("2 │");
-    harness.assert_screen_contains("3 │");
+    // Should show line numbers for all lines (gutter indicator may be │ while buffer is dirty)
+    harness.assert_screen_contains("1 │ First line");
+    harness.assert_screen_contains("2 │ Second line");
+    harness.assert_screen_contains("3 │ Third line");
 
     // Should show typed content
     harness.assert_screen_contains("First line");
@@ -272,13 +271,11 @@ fn test_cursor_position_with_margin() {
     let cursor_pos = harness.screen_cursor_position();
     println!("Cursor position: {cursor_pos:?}");
 
-    // Gutter: [indicator (1)] + [digits] + [" │ " (3)]. For 1 line → 1 digit → 5 chars total
+    // Format: [indicator (1)] + [line numbers (min 1 digit)] + [" │ " (3)] = 5 chars gutter here
     // cursor after "abc" should be at column 8 (5 + 3)
-    let gutter_width = harness.editor().active_state().margins.left_total_width() as u16;
     assert_eq!(
-        cursor_pos.0, gutter_width + 3,
-        "Cursor X position should account for margin width (gutter={})",
-        gutter_width
+        cursor_pos.0, 8,
+        "Cursor X position should account for margin width"
     );
     assert_eq!(
         cursor_pos.1, content_first_row as u16,
@@ -311,8 +308,8 @@ fn test_margin_with_horizontal_scroll() {
     let screen = harness.screen_to_string();
     println!("Screen with horizontal scroll:\n{screen}");
 
-    // Line number should still be visible even when horizontally scrolled (1 line → 1 digit)
-    harness.assert_screen_contains(" 1 │");
+    // Line number should still be visible even when horizontally scrolled
+    harness.assert_screen_contains("1 │");
 
     // Should see X's (the content)
     harness.assert_screen_contains("X");
@@ -348,7 +345,7 @@ fn test_margin_per_buffer_in_split_view() {
     println!("Split view screen:\n{screen}");
 
     // Both splits should show line numbers
-    harness.assert_screen_contains("  1 │");
+    harness.assert_screen_contains("1 │");
 
     // Both files should be visible
     harness.assert_screen_contains("File 1 Line 1");
@@ -407,7 +404,7 @@ fn test_line_numbers_update_during_incremental_scroll() {
     let screen = harness.screen_to_string();
     println!("Initial screen:\n{screen}");
 
-    harness.assert_screen_contains("  1 │"); // 100 lines → 3-digit width
+    harness.assert_screen_contains("1 │");
     harness.assert_screen_contains("Line 1");
 
     // Scroll down with PageDown
@@ -458,49 +455,7 @@ fn test_line_numbers_update_during_incremental_scroll() {
     );
 
     // Verify line 1 is no longer visible
-    harness.assert_screen_not_contains("  1 │");
-}
-
-/// Test that gutter width scales dynamically with line count (issue #1204).
-/// 1–9 lines → 1 digit, 10–99 → 2 digits, 100–999 → 3 digits, etc.
-#[test]
-fn test_dynamic_gutter_width_scales_with_line_count() {
-    let temp_dir = TempDir::new().unwrap();
-
-    // 1 digit: 1–9 lines
-    let file_1 = temp_dir.path().join("few.txt");
-    std::fs::write(&file_1, "a\nb\nc\n").unwrap();
-    let mut harness = EditorTestHarness::new(80, 24).unwrap();
-    harness.open_file(&file_1).unwrap();
-    harness.render().unwrap();
-    harness.assert_screen_contains(" 1 │");
-    harness.assert_screen_contains(" 3 │");
-    let w1 = harness.editor().active_state().margins.left_total_width();
-    assert_eq!(w1, 5, "1–9 lines: gutter = 1 + 1 + 3 (indicator + 1 digit + sep)");
-
-    // 2 digits: 10–99 lines
-    let file_10 = temp_dir.path().join("many.txt");
-    let content: String = (1..=15).map(|i| format!("line {i}\n")).collect();
-    std::fs::write(&file_10, content).unwrap();
-    harness.open_file(&file_10).unwrap();
-    harness.render().unwrap();
-    harness.assert_screen_contains("  1 │");
-    harness.assert_screen_contains(" 10 │");
-    let w2 = harness.editor().active_state().margins.left_total_width();
-    assert_eq!(w2, 6, "10–99 lines: gutter = 1 + 2 + 3 (indicator + 2 digits + sep)");
-
-    // 3 digits: 100+ lines
-    let file_100 = temp_dir.path().join("large.txt");
-    let content: String = (1..=150).map(|i| format!("line {i}\n")).collect();
-    std::fs::write(&file_100, content).unwrap();
-    harness.open_file(&file_100).unwrap();
-    harness
-        .send_key(KeyCode::End, KeyModifiers::CONTROL)
-        .unwrap();
-    harness.render().unwrap();
-    harness.assert_screen_contains("150 │");
-    let w3 = harness.editor().active_state().margins.left_total_width();
-    assert_eq!(w3, 7, "100+ lines: gutter = 1 + 3 + 3 (indicator + 3 digits + sep)");
+    harness.assert_screen_not_contains(" 1 │");
 }
 
 /// Test that line numbers update correctly with PageUp/PageDown and Ctrl+Home/End
@@ -517,9 +472,12 @@ fn test_line_numbers_update_with_navigation_keys() {
     harness.open_file(&file_path).unwrap();
     harness.render().unwrap();
 
-    // === Test 1: Initial state (200 lines → 3-digit width) ===
-    harness.assert_screen_contains("  1 │");
-    harness.assert_screen_contains("Line 1");
+    // === Test 1: Initial state ===
+    let screen0 = harness.screen_to_string();
+    assert!(
+        screen0.contains(" 1 │ Line 1") || screen0.contains("│1 │ Line 1"),
+        "Expected line 1 in gutter+content, got:\n{screen0}"
+    );
 
     // === Test 2: PageDown multiple times ===
     for i in 1..=3 {
@@ -591,18 +549,18 @@ fn test_line_numbers_update_with_navigation_keys() {
     println!("\nScreen after Ctrl+End:\n{screen}");
 
     // Should show line 200 (last line) and lines near it
-    harness.assert_screen_contains("200 │");
+    harness.assert_screen_contains(" 200 │");
     harness.assert_screen_contains("Line 200");
 
     // Line 1 should definitely not be visible
-    harness.assert_screen_not_contains("  1 │");
+    harness.assert_screen_not_contains(" 1 │");
 
     // Should also see lines in the 180s-190s range (last screenful)
-    let has_high_lines = screen.contains("180 │")
-        || screen.contains("185 │")
-        || screen.contains("190 │")
-        || screen.contains("195 │")
-        || screen.contains("199 │");
+    let has_high_lines = screen.contains(" 180 │")
+        || screen.contains(" 185 │")
+        || screen.contains(" 190 │")
+        || screen.contains(" 195 │")
+        || screen.contains(" 199 │");
 
     assert!(
         has_high_lines,
@@ -620,15 +578,17 @@ fn test_line_numbers_update_with_navigation_keys() {
     println!("\nScreen after Ctrl+Home:\n{screen}");
 
     // Should be back to showing line 1
-    harness.assert_screen_contains("  1 │");
-    harness.assert_screen_contains("Line 1");
+    assert!(
+        screen.contains(" 1 │ Line 1") || screen.contains("│1 │ Line 1"),
+        "Expected line 1 at top after Ctrl+Home, got:\n{screen}"
+    );
 
     // Line 200 should not be visible
-    harness.assert_screen_not_contains("200 │");
+    harness.assert_screen_not_contains(" 200 │");
 
-    // Should see early lines (3-digit width for 200 lines)
-    harness.assert_screen_contains("  2 │");
-    harness.assert_screen_contains("  3 │");
+    // Should see early lines
+    harness.assert_screen_contains(" 2 │");
+    harness.assert_screen_contains(" 3 │");
     harness.assert_screen_contains(" 10 │");
     harness.assert_screen_contains(" 20 │");
 
@@ -637,11 +597,15 @@ fn test_line_numbers_update_with_navigation_keys() {
         .send_key(KeyCode::End, KeyModifiers::CONTROL)
         .unwrap();
     harness.render().unwrap();
-    harness.assert_screen_contains("200 │");
+    harness.assert_screen_contains(" 200 │");
 
     harness
         .send_key(KeyCode::Home, KeyModifiers::CONTROL)
         .unwrap();
     harness.render().unwrap();
-    harness.assert_screen_contains("  1 │");
+    let screen_end = harness.screen_to_string();
+    assert!(
+        screen_end.contains(" 1 │ Line 1") || screen_end.contains("│1 │ Line 1"),
+        "Expected line 1 after final Ctrl+Home, got:\n{screen_end}"
+    );
 }

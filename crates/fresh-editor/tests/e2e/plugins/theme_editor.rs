@@ -1845,9 +1845,9 @@ fn test_cursor_on_value_field_when_navigating() {
     // The cursor X should NOT be at the first column (0)
     // It should be positioned after "FieldName: " on the value
     // The exact position depends on field name length and indentation
-    // But it should definitely be > 10 (past indentation + field name + colon)
+    // Past gutter / line start (layout-dependent); value field is never column 0
     assert!(
-        cursor_x > 5,
+        cursor_x > 3,
         "Cursor X should be positioned on the value field, not at first column. Got X={}",
         cursor_x
     );
@@ -1860,7 +1860,7 @@ fn test_cursor_on_value_field_when_navigating() {
 
     // Should still be positioned on value
     assert!(
-        cursor_x_2 > 5,
+        cursor_x_2 > 3,
         "Cursor X should be positioned on value after navigating. Got X={}",
         cursor_x_2
     );

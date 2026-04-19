@@ -330,9 +330,8 @@ fn test_cursor_x_position_after_enter_at_end_of_line() {
 
     // The cursor should be at the leftmost column of the content area (after the gutter)
     // For a buffer with 3 lines (line1, line2, empty), the gutter width is:
-    // 1 (indicator) + 4 (line number) + 3 (separator " │ ") = 8
-    // So screen_x should be 8 (the first column after the gutter)
-    let expected_x = 8; // gutter width
+    // 1 (indicator) + 1 (line number) + 3 (separator " │ ") = 5
+    let expected_x = 5; // gutter width
     assert_eq!(
         screen_x, expected_x,
         "BUG: Cursor X should be at leftmost column {} (after gutter), got {}",

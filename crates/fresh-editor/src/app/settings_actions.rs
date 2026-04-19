@@ -92,6 +92,18 @@ impl Editor {
             }
         };
 
+        let validation_errors = new_config.validate();
+        if !validation_errors.is_empty() {
+            self.set_status_message(
+                t!(
+                    "settings.failed_to_apply",
+                    error = validation_errors.join("; ")
+                )
+                .to_string(),
+            );
+            return;
+        }
+
         // Apply the new config
         self.config = new_config.clone();
 

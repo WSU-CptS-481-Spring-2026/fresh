@@ -1132,13 +1132,20 @@ pub struct FileExplorerConfig {
     #[serde(default)]
     pub custom_ignore_patterns: Vec<String>,
 
-    /// Width of file explorer as percentage (0.0 to 1.0)
+    /// Width of file explorer as percentage (0 to 100)
     #[serde(default = "default_explorer_width")]
+    #[schemars(range(min = 0.1, max = 0.5))]
     pub width: f32,
 }
 
 fn default_explorer_width() -> f32 {
     0.3 // 30% of screen width
+}
+
+/// Clamp file explorer width to the same range enforced by mouse resize (10%–50%).
+/// Used when applying width from config/settings to match drag behavior.
+pub fn clamp_file_explorer_width(v: f32) -> f32 {
+    v.clamp(0.1, 0.5)
 }
 
 /// Clipboard configuration
@@ -3610,37 +3617,54 @@ impl Config {
         );
     }
 
-    /// Validate the configuration
-    pub fn validate(&self) -> Result<(), ConfigError> {
-        // Validate tab size
+    /// Validate configuration fields with known constraints.
+    ///
+    /// Returns a list of human-readable error messages. An empty vector means the config is valid.
+    /// Used before applying settings from the Settings UI so invalid values are rejected with feedback
+    /// instead of being silently clamped or corrected.
+    pub fn validate(&self) -> Vec<String> {
+        let mut errors = Vec::new();
+
+        let w = self.file_explorer.width;
+        if !w.is_finite() || !(0.1..=0.5).contains(&w) {
+            errors.push(format!(
+                "file_explorer.width must be between 0.1 and 0.5 (got {w})"
+            ));
+        }
+
         if self.editor.tab_size == 0 {
-            return Err(ConfigError::ValidationError(
-                "tab_size must be greater than 0".to_string(),
+            errors.push("editor.tab_size must be at least 1".to_string());
+        } else if self.editor.tab_size > 32 {
+            errors.push(format!(
+                "editor.tab_size must be at most 32 (got {})",
+                self.editor.tab_size
             ));
         }
 
-        // Validate scroll offset
         if self.editor.scroll_offset > 100 {
-            return Err(ConfigError::ValidationError(
-                "scroll_offset must be <= 100".to_string(),
+            errors.push(format!(
+                "editor.scroll_offset must be at most 100 (got {})",
+                self.editor.scroll_offset
             ));
         }
 
-        // Validate keybindings
-        for binding in &self.keybindings {
+        if self.editor.quick_suggestions_delay_ms > 60_000 {
+            errors.push(format!(
+                "editor.quick_suggestions_delay_ms must be at most 60000 (got {})",
+                self.editor.quick_suggestions_delay_ms
+            ));
+        }
+
+        for (i, binding) in self.keybindings.iter().enumerate() {
             if binding.key.is_empty() {
-                return Err(ConfigError::ValidationError(
-                    "keybinding key cannot be empty".to_string(),
-                ));
+                errors.push(format!("keybindings[{i}].key cannot be empty"));
             }
             if binding.action.is_empty() {
-                return Err(ConfigError::ValidationError(
-                    "keybinding action cannot be empty".to_string(),
-                ));
+                errors.push(format!("keybindings[{i}].action cannot be empty"));
             }
         }
 
-        Ok(())
+        errors
     }
 }
 
@@ -3671,6 +3695,16 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_clamp_file_explorer_width() {
+        assert!((clamp_file_explorer_width(0.3) - 0.3).abs() < 0.001);
+        assert!((clamp_file_explorer_width(0.1) - 0.1).abs() < 0.001);
+        assert!((clamp_file_explorer_width(0.5) - 0.5).abs() < 0.001);
+        assert!((clamp_file_explorer_width(0.05) - 0.1).abs() < 0.001, "below min should clamp to 0.1");
+        assert!((clamp_file_explorer_width(0.9) - 0.5).abs() < 0.001, "above max should clamp to 0.5");
+        assert!((clamp_file_explorer_width(0.0) - 0.1).abs() < 0.001);
+    }
+
+    #[test]
     fn test_default_config() {
         let config = Config::default();
         assert_eq!(config.editor.tab_size, 4);
@@ -3693,12 +3727,91 @@ mod tests {
     }
 
     #[test]
-    fn test_config_validation() {
-        let mut config = Config::default();
-        assert!(config.validate().is_ok());
+    fn test_config_validation_default_is_valid() {
+        let config = Config::default();
+        assert!(config.validate().is_empty());
+    }
 
+    #[test]
+    fn test_config_validation_file_explorer_width() {
+        let mut config = Config::default();
+        config.file_explorer.width = 0.05;
+        assert_eq!(config.validate().len(), 1);
+        assert!(config.validate()[0].contains("file_explorer.width"));
+
+        config.file_explorer.width = 0.6;
+        let err = config.validate();
+        assert_eq!(err.len(), 1);
+        assert!(err[0].contains("0.6"));
+
+        config.file_explorer.width = f32::NAN;
+        assert!(!config.validate().is_empty());
+
+        config.file_explorer.width = 0.3;
+        assert!(config.validate().is_empty());
+
+        config.file_explorer.width = 0.1;
+        assert!(config.validate().is_empty());
+        config.file_explorer.width = 0.5;
+        assert!(config.validate().is_empty());
+    }
+
+    #[test]
+    fn test_config_validation_tab_size() {
+        let mut config = Config::default();
         config.editor.tab_size = 0;
-        assert!(config.validate().is_err());
+        assert!(config.validate().iter().any(|e| e.contains("tab_size")));
+
+        config.editor.tab_size = 33;
+        assert!(config.validate().iter().any(|e| e.contains("32")));
+
+        config.editor.tab_size = 1;
+        config.file_explorer.width = 0.3;
+        assert!(config.validate().is_empty());
+    }
+
+    #[test]
+    fn test_config_validation_scroll_offset_and_quick_suggestions_delay() {
+        let mut config = Config::default();
+        config.editor.scroll_offset = 101;
+        assert!(config
+            .validate()
+            .iter()
+            .any(|e| e.contains("scroll_offset")));
+
+        config.editor.scroll_offset = 3;
+        config.editor.quick_suggestions_delay_ms = 60_001;
+        assert!(config
+            .validate()
+            .iter()
+            .any(|e| e.contains("quick_suggestions_delay_ms")));
+
+        config.editor.quick_suggestions_delay_ms = 150;
+        assert!(config.validate().is_empty());
+    }
+
+    #[test]
+    fn test_config_validation_multiple_errors_collected() {
+        let mut config = Config::default();
+        config.file_explorer.width = 0.01;
+        config.editor.tab_size = 0;
+        config.editor.scroll_offset = 200;
+        let v = config.validate();
+        assert!(v.len() >= 3, "expected multiple errors, got {v:?}");
+    }
+
+    #[test]
+    fn test_config_validation_keybindings() {
+        let mut config = Config::default();
+        config.keybindings.push(Keybinding {
+            key: String::new(),
+            modifiers: Vec::new(),
+            keys: Vec::new(),
+            action: "foo".to_string(),
+            args: std::collections::HashMap::new(),
+            when: None,
+        });
+        assert!(config.validate().iter().any(|e| e.contains("key")));
     }
 
     #[test]

@@ -727,6 +727,10 @@ pub(super) struct MouseState {
     pub drag_selection_split: Option<LeafId>,
     /// The buffer byte position where the selection anchor is
     pub drag_selection_anchor: Option<usize>,
+    /// After double-click + drag: extend selection by whole words.
+    pub drag_selection_by_words: bool,
+    /// After triple-click + drag: extend selection line-by-line (snap to line starts/ends).
+    pub drag_selection_by_lines: bool,
     /// Tab drag state (for drag-to-split functionality)
     pub dragging_tab: Option<TabDragState>,
     /// Whether we're currently dragging a popup scrollbar (popup index)

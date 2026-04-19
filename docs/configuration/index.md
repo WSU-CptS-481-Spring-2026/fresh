@@ -241,6 +241,10 @@ All settings can be changed via the Settings UI (command palette → "Open Setti
 | Whitespace indicators | Show space/tab characters (leading, inner, trailing) | off |
 | Diagnostics inline text | Show diagnostics at end of line | off |
 
+### Git gutter markers
+
+When a buffer has a file path and `git` is available, the gutter indicator column can show version-control status from `git diff HEAD` on the saved file: green `+` (added), yellow `~` (modified), red `-` (deleted). Markers refresh when you switch to the tab or save; unsaved edits in the buffer are not included until they are written to disk. The indicator column is shared with other gutter symbols (for example diagnostics may show `●`); the highest-priority indicator wins when more than one applies.
+
 ### Editing
 
 | Setting | Description | Default |

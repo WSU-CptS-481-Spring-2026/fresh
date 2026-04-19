@@ -803,10 +803,10 @@ fn test_diagnostic_overlay_visual_rendering() {
     harness.render().unwrap();
 
     // Now check that the character "x" at the expected position has red color
-    // The gutter is now " " + "   1" + " │ " (8 characters: indicator + line number + separator)
-    // So the text starts at column 8
-    // "let x = 5;" -> "x" is at text position 4, which maps to screen column 8 + 4 = 12
-    let gutter_width = 8; // " " (indicator) + "   1" + " │ " for line 1
+    // The gutter is " " + "1" + " │ " (5 characters: indicator + line number + separator)
+    // So the text starts at column 5
+    // "let x = 5;" -> "x" is at text position 4, which maps to screen column 5 + 4 = 9
+    let gutter_width = 5; // " " (indicator) + "1" + " │ " for line 1
     let x_column = gutter_width + 4; // Position of "x" in "let x = 5;"
     let (content_first_row, _) = harness.content_area_rows();
     let x_row = content_first_row as u16; // First line of content (row 0 is menu bar, row 1 is tab bar, row 2 is first text line)

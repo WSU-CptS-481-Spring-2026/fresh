@@ -4121,6 +4121,12 @@ impl SplitRenderer {
             |byte_offset| indent_folding::find_line_start_byte(&state.buffer, byte_offset),
         );
 
+        let git_indicators =
+            Self::git_diff_indicators_for_viewport(state, viewport_start, viewport_end);
+        for (key, git_ind) in git_indicators {
+            line_indicators.entry(key).or_insert(git_ind);
+        }
+
         // Merge native diff-since-saved indicators (cornflower blue │ for unsaved edits).
         // These have priority 5, lower than git gutter (10), so existing indicators win.
         let diff_indicators =
@@ -4189,6 +4195,49 @@ impl SplitRenderer {
             }
         }
 
+        indicators
+    }
+
+    /// Git diff vs `HEAD` (on-disk file) for the viewport — `+`, `~`, `-` in the indicator column.
+    ///
+    /// Skipped in byte-offset (large-file) mode where line metadata is unavailable.
+    /// Priority 12: above native unsaved-diff markers (5) and typical plugin git gutter (10);
+    /// lower than breakpoints (20) so breakpoints still win when both apply.
+    fn git_diff_indicators_for_viewport(
+        state: &EditorState,
+        viewport_start: usize,
+        viewport_end: usize,
+    ) -> BTreeMap<usize, crate::view::margin::LineIndicator> {
+        use crate::services::git_diff::DiffStatus;
+        use crate::view::folding::indent_folding;
+        use crate::view::margin::LineIndicator;
+
+        if state.git_diff_lines.is_empty() {
+            return BTreeMap::new();
+        }
+        if state.buffer.line_count().is_none() {
+            return BTreeMap::new();
+        }
+
+        let mut indicators = BTreeMap::new();
+        for (&line_1based, status) in &state.git_diff_lines {
+            let line0 = line_1based.saturating_sub(1);
+            let Some(byte) = state.buffer.line_start_offset(line0) else {
+                continue;
+            };
+            if byte < viewport_start || byte >= viewport_end {
+                continue;
+            }
+            let line_start = indent_folding::find_line_start_byte(&state.buffer, byte);
+            let (symbol, color) = match status {
+                DiffStatus::Added => ("+", Color::Green),
+                DiffStatus::Modified => ("~", Color::Yellow),
+                DiffStatus::Deleted => ("-", Color::Red),
+            };
+            indicators
+                .entry(line_start)
+                .or_insert_with(|| LineIndicator::new(symbol, color, 12));
+        }
         indicators
     }
 

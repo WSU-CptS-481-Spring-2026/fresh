@@ -69,6 +69,11 @@ Edit multiple locations simultaneously:
 | `Ctrl+Shift+Home/End` | Select to document start/end |
 | `Shift+PgUp/PgDn` | Select page up/down |
 
+| Mouse | Action |
+|-------|--------|
+| Double-click + drag | Extend selection word-by-word (after double-clicking a word) |
+| Triple-click + drag | Extend selection line-by-line |
+
 ### Block Selection
 
 | Shortcut | Action |

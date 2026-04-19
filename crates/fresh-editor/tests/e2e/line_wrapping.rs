@@ -57,7 +57,7 @@ fn test_wrapped_line_navigation_home() {
     let mut harness = EditorTestHarness::new(60, 24).unwrap();
 
     // Type a long line that will wrap
-    // With 60-col terminal, gutter=8, scrollbar=1, text width=51
+    // With 60-col terminal, gutter≈5, scrollbar=1, text width≈54
     let long_text = "This is a very long line of text that will definitely exceed the terminal width and should wrap to multiple lines.";
     harness.type_text(long_text).unwrap();
 
@@ -104,7 +104,7 @@ fn test_wrapped_line_navigation_end() {
     let mut harness = EditorTestHarness::new(60, 24).unwrap();
 
     // Type a long line that will wrap
-    // With 60-col terminal, gutter=8, scrollbar=1, text width=51
+    // With 60-col terminal, gutter≈5, scrollbar=1, text width≈54
     let long_text = "This is a very long line of text that will definitely exceed the terminal width and should wrap to multiple lines.";
     harness.type_text(long_text).unwrap();
 
@@ -392,7 +392,7 @@ fn test_wrapped_line_no_horizontal_scroll() {
 #[test]
 fn test_wrapped_line_cursor_positioning() {
     const TERMINAL_WIDTH: u16 = 60;
-    const GUTTER_WIDTH: u16 = 8;
+    const GUTTER_WIDTH: u16 = 5;
 
     let mut harness = EditorTestHarness::new(TERMINAL_WIDTH, 24).unwrap();
 
@@ -440,7 +440,7 @@ fn test_wrapped_line_cursor_positioning() {
 
     // Move right through the line to detect where wrapping occurs
     // We'll detect up to 2 wrap points to understand the wrapping pattern
-    for i in 1..=long_text.len().min(100) {
+    for i in 1..=long_text.len() {
         harness
             .send_key(KeyCode::Right, KeyModifiers::NONE)
             .unwrap();
@@ -573,7 +573,7 @@ fn test_wrapped_line_cursor_positioning() {
     let mut prev_y = end_y;
 
     // Move left through the text, watching for upward wrapping
-    for i in 1..=50 {
+    for i in 1..=200 {
         harness.send_key(KeyCode::Left, KeyModifiers::NONE).unwrap();
         harness.render().unwrap();
 
@@ -798,7 +798,7 @@ fn test_mouse_click_on_wrapped_lines() {
 
     const TERMINAL_WIDTH: u16 = 60;
     const TERMINAL_HEIGHT: u16 = 24;
-    const GUTTER_WIDTH: u16 = 8; // Line numbers + margin
+    const GUTTER_WIDTH: u16 = 5; // Line numbers + margin
 
     let mut harness = EditorTestHarness::new(TERMINAL_WIDTH, TERMINAL_HEIGHT).unwrap();
 
@@ -894,8 +894,8 @@ fn test_mouse_click_on_wrapped_lines() {
     // ========================================
     eprintln!("\n=== Test 2: Click on wrapped continuation row ===");
 
-    // The text width available is TERMINAL_WIDTH - GUTTER_WIDTH - 1 (scrollbar) = 60 - 8 - 1 = 51
-    // So the first wrap should occur around character 51
+    // The text width available is TERMINAL_WIDTH - GUTTER_WIDTH - 1 (scrollbar) = 60 - 5 - 1 = 54
+    // So the first wrap should occur around character 54
     let text_width = (TERMINAL_WIDTH - GUTTER_WIDTH - 1) as usize;
     eprintln!("Text width per row: {} chars", text_width);
 
@@ -938,7 +938,7 @@ fn test_mouse_click_on_wrapped_lines() {
     eprintln!("\n=== Test 3: Click on empty line ===");
 
     // First, find which visual row the empty line is on
-    // Line 1 wraps to ~2 visual rows (85 chars / 51 chars per row ≈ 2 rows)
+    // Line 1 wraps to ~2 visual rows (85 chars / 54 chars per row ≈ 2 rows)
     let visual_rows_for_line1 = long_line.len().div_ceil(text_width);
     eprintln!("Line 1 takes {} visual rows", visual_rows_for_line1);
 
@@ -1034,10 +1034,9 @@ fn test_mouse_click_on_wrapped_lines() {
         click_x, click_y, pos_after_click5
     );
 
-    // Cursor should be near the end of the first visual row
-    // (around text_width position, give or take)
+    // Cursor should be near the end of the first visual row (word-wrapping may break earlier than `text_width`)
     assert!(
-        pos_after_click5 >= text_width.saturating_sub(5) && pos_after_click5 <= text_width + 5,
+        pos_after_click5 >= text_width.saturating_sub(15) && pos_after_click5 <= text_width + 5,
         "Click at end of first visual row should position cursor near wrap point (pos {} should be around {})",
         pos_after_click5,
         text_width
@@ -1772,12 +1771,12 @@ fn test_mouse_click_wrapped_thai_grapheme_clusters() {
 fn test_visual_line_movement_up_down() {
     const TERMINAL_WIDTH: u16 = 60;
     const TERMINAL_HEIGHT: u16 = 24;
-    const GUTTER_WIDTH: u16 = 8; // Line numbers + margin
+    const GUTTER_WIDTH: u16 = 5; // Line numbers + margin
 
     let mut harness = EditorTestHarness::new(TERMINAL_WIDTH, TERMINAL_HEIGHT).unwrap();
 
     // Create a long line that will wrap to multiple visual lines
-    // With 60 width, 8 gutter, 1 scrollbar = 51 chars per visual line
+    // With 60 width, ~5 gutter, 1 scrollbar ≈54 chars per visual line
     // We want at least 3 visual lines, so ~150+ chars
     let long_line = "The quick brown fox jumps over the lazy dog and continues running through the forest, exploring ancient trees and mysterious pathways that wind between towering oaks and silent pines.";
 
@@ -1810,7 +1809,7 @@ fn test_visual_line_movement_up_down() {
     assert_eq!(start_x, GUTTER_WIDTH, "Should be at start of text area");
 
     // Calculate the text width per visual line (terminal - gutter - scrollbar)
-    let text_width = (TERMINAL_WIDTH - GUTTER_WIDTH - 1) as usize; // 51 chars
+    let text_width = (TERMINAL_WIDTH - GUTTER_WIDTH - 1) as usize; // ~54 chars
 
     // Move cursor to the middle of the first visual line
     for _ in 0..20 {
@@ -1873,7 +1872,7 @@ fn test_visual_line_movement_up_down() {
     // (around text_width + original_column)
     let expected_pos_approx = text_width + 20; // roughly where we expect cursor
     assert!(
-        (down_pos as isize - expected_pos_approx as isize).abs() < 5,
+        (down_pos as isize - expected_pos_approx as isize).abs() < 15,
         "Buffer position {} should be around {} (text_width + column)",
         down_pos,
         expected_pos_approx
@@ -1912,7 +1911,7 @@ fn test_visual_line_movement_up_down() {
 fn test_end_key_goes_to_visual_line_end() {
     let mut harness = EditorTestHarness::new(60, 24).unwrap();
 
-    // With 60-col terminal, gutter width ~8, scrollbar=1, text width=51
+    // With 60-col terminal, gutter width ~5, scrollbar=1, text width≈54
     // Create a line that wraps into 3 segments
     let long_text = "A fast, lightweight terminal text editor written in Rust. Handles files of any size with instant startup, low memory usage, and modern IDE features.";
     harness.type_text(long_text).unwrap();

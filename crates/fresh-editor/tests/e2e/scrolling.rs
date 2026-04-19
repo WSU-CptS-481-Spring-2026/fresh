@@ -2074,8 +2074,8 @@ fn test_cursor_visibility_at_line_end_no_wrap() {
     config.editor.line_wrap = false;
     let mut harness = EditorTestHarness::with_config(80, 24, config).unwrap();
 
-    let gutter_width = 8; // Approximate gutter width for line numbers
-    let visible_width = 80 - gutter_width; // ~72 characters visible
+    let gutter_width = 5; // Approximate gutter width for line numbers (1-digit line count)
+    let visible_width = 80 - gutter_width; // ~75 characters visible
 
     // Create a long line that extends well beyond visible width
     // We'll create a line that's 100 characters long

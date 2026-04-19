@@ -6,6 +6,7 @@
 pub mod async_bridge;
 pub mod clipboard;
 pub mod fs;
+pub mod git_diff;
 #[cfg(target_os = "linux")]
 pub mod gpm;
 pub mod log_dirs;

@@ -56,26 +56,20 @@ fn test_screen_cursor_position() {
     // Get the actual screen cursor position from the terminal
     let cursor_pos = harness.screen_cursor_position();
 
-    // After typing "abc", cursor should be at column 11:
-    // " "  "   1" " │ " "abc" - the cursor should be after 'c'
-    // Indicator column: 1 char (space when no indicator)
-    // Line numbers are 4 chars wide: "   1"
-    // Then " │ " = 3 chars
-    // Then "abc" = 3 chars
-    // Total: 1 + 4 + 3 + 3 = 11
-    // So cursor X should be at column 11 (0-indexed)
-    // And cursor Y should be at content_first_row (after menu bar and tab bar)
+    // After typing "abc", cursor should be at column 8:
+    // " " + "1" + " │ " + "abc" — cursor after 'c'
+    // Indicator: 1, line number width 1, separator 3, text 3 → 1+1+3+3 = 8
 
     println!("Cursor position after typing 'abc': {{cursor_pos:?}}");
-    println!("Expected: x=11 (1 + 4 + 3 + 3), y={content_first_row}");
+    println!("Expected: x=8 (1 + 1 + 3 + 3), y={content_first_row}");
 
     assert_eq!(
         cursor_pos.1, content_first_row as u16,
         "Cursor Y should be at row {content_first_row} (content area start)"
     );
     assert_eq!(
-        cursor_pos.0, 11,
-        "Cursor X should be at column 11 (after 'abc')"
+        cursor_pos.0, 8,
+        "Cursor X should be at column 8 (after 'abc')"
     );
 }
 
@@ -264,7 +258,7 @@ fn test_cursor_position_with_large_line_numbers() {
 
     // Now verify cursor positioning is correct for the gutter width
     // In byte offset mode, gutter sized for file size (~73,000,000 bytes = 8 digits)
-    // Format: [indicator (1)] + [digits, min 1] + [" │ " (3 chars)]
+    // Format: [indicator (1)] + [max(1, digits)] + [" │ " (3 chars)]
     let digits = ((buffer_len as f64).log10().floor() as usize) + 1;
     let expected_gutter = 1 + digits.max(1) + 3;
     println!("\nExpected gutter width: {expected_gutter} (1 + {digits}-digit byte offset + 3)",);
@@ -550,8 +544,8 @@ fn test_ansi_rgb_color_rendering() {
     // Get the content area start row (after menu bar and tab bar)
     let (content_row, _) = harness.content_area_rows();
 
-    // Gutter width scales with line count (from harness)
-    let gutter_width = harness.editor().active_state().margins.left_total_width() as u16;
+    // The gutter is: indicator (1) + line numbers (min 1 digit) + separator (3) = 5 chars here
+    let gutter_width = 5;
 
     let screen = harness.screen_to_string();
     println!("Screen content:\n{screen}");
