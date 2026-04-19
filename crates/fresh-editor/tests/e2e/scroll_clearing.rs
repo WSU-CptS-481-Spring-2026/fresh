@@ -940,9 +940,9 @@ fn test_cursor_before_first_tab() {
 
     // The x position should be at the start of content (after gutter)
     // not at position after the first tab expansion (which would be ~gutter+8)
-    // The gutter for this file is "    3 │ " = 8 characters
-    // So cursor should be at column 8 (right after gutter), NOT column 15 (after tab expansion)
-    let gutter_width = 8u16;
+    // The gutter for this file is one indicator + line digit(s) + " │ " (e.g. 5 characters)
+    // So cursor should be right after the gutter, NOT after tab expansion
+    let gutter_width = 5u16;
     println!(
         "Cursor x={} (should be {} = gutter width, not {} = after tab)",
         cursor_x,

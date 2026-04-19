@@ -29,6 +29,7 @@ use anyhow::Result;
 use lsp_types::FoldingRange;
 use ratatui::style::{Color, Style};
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::ops::Range;
 use std::sync::Arc;
 
@@ -123,6 +124,10 @@ pub struct EditorState {
     /// Margins for line numbers, annotations, gutter symbols, etc.)
     pub margins: MarginManager,
 
+    /// Git diff vs `HEAD` for this buffer's path on disk (1-based line numbers).
+    /// Updated when the tab becomes active and after save; reflects the file on disk, not unsaved edits.
+    pub git_diff_lines: HashMap<usize, crate::services::git_diff::DiffStatus>,
+
     /// Cached line number for primary cursor (0-indexed)
     /// Maintained incrementally to avoid O(n) scanning on every render
     pub primary_cursor_line_number: LineNumber,
@@ -214,6 +219,7 @@ impl EditorState {
             soft_breaks: SoftBreakManager::new(),
             popups: PopupManager::new(),
             margins: MarginManager::new(),
+            git_diff_lines: HashMap::new(),
             primary_cursor_line_number: LineNumber::Absolute(0),
             mode: "insert".to_string(),
             text_properties: TextPropertyManager::new(),

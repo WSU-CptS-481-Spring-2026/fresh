@@ -2251,6 +2251,8 @@ impl Editor {
         #[cfg(feature = "plugins")]
         self.update_plugin_state_snapshot();
 
+        self.refresh_git_diff(buffer_id);
+
         // Emit buffer_activated hook for plugins
         self.plugin_manager.run_hook(
             "buffer_activated",

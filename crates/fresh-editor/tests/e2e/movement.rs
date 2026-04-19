@@ -283,10 +283,10 @@ fn test_rapid_typing_middle_of_line_cursor_sync() {
     let initial_screen_pos = harness.screen_cursor_position();
     println!("Initial screen cursor position (after 'Hello '): {initial_screen_pos:?}");
 
-    // Expected: Indicator (1) + Line numbers (4) + " │ " (3) + "Hello " (6) = 14
+    // Expected: Indicator (1) + Line numbers (1) + " │ " (3) + "Hello " (6) = 11
     assert_eq!(
-        initial_screen_pos.0, 14,
-        "Screen cursor X should be at column 14 after 'Hello '"
+        initial_screen_pos.0, 11,
+        "Screen cursor X should be at column 11 after 'Hello '"
     );
 
     // Rapidly type multiple characters in the middle
@@ -318,7 +318,7 @@ fn test_rapid_typing_middle_of_line_cursor_sync() {
 
         // 3. Verify screen cursor position matches logical position
         let screen_pos = harness.screen_cursor_position();
-        let expected_screen_x = 14 + char_count as u16; // Initial (14) + characters typed so far
+        let expected_screen_x = 11 + char_count as u16; // Initial (11) + characters typed so far
         assert_eq!(
             screen_pos.0, expected_screen_x,
             "After typing '{}' (char {} of {}), screen cursor X should be {} but is {}.\nBuffer: '{}'",
@@ -340,8 +340,8 @@ fn test_rapid_typing_middle_of_line_cursor_sync() {
     let final_screen_pos = harness.screen_cursor_position();
     let (content_first_row, _) = harness.content_area_rows();
     assert_eq!(
-        final_screen_pos.0, 24,
-        "Final screen cursor X should be at column 24"
+        final_screen_pos.0, 21,
+        "Final screen cursor X should be at column 21"
     );
     assert_eq!(
         final_screen_pos.1, content_first_row as u16,
@@ -377,10 +377,10 @@ fn test_rapid_typing_multiple_positions() {
 
     // Verify screen cursor position
     let screen_pos = harness.screen_cursor_position();
-    // Indicator (1) + Line numbers (4) + " │ " (3) + "The very " (9) = 17
+    // Indicator (1) + Line numbers (1) + " │ " (3) + "The very " (9) = 14
     assert_eq!(
-        screen_pos.0, 17,
-        "Screen cursor should be at column 17 after 'The very '"
+        screen_pos.0, 14,
+        "Screen cursor should be at column 14 after 'The very '"
     );
 
     // Move to after "quick " (position 15 now, was 10 before insertion)
@@ -398,8 +398,8 @@ fn test_rapid_typing_multiple_positions() {
 
     // Verify screen cursor position again
     let screen_pos2 = harness.screen_cursor_position();
-    // Indicator (1) + Line numbers (4) + " │ " (3) + "The very quick and " (19) = 27
-    assert_eq!(screen_pos2.0, 27, "Screen cursor should be at column 27");
+    // Indicator (1) + Line numbers (1) + " │ " (3) + "The very quick and " (19) = 24
+    assert_eq!(screen_pos2.0, 24, "Screen cursor should be at column 24");
 }
 
 /// Test cursor sync when typing then immediately deleting

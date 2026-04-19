@@ -148,7 +148,21 @@ impl Editor {
             }
         }
 
+        self.refresh_git_diff(buffer_id);
+
         Ok(())
+    }
+
+    /// Refresh [`EditorState::git_diff_lines`] from `git diff HEAD` for the buffer's path.
+    pub(crate) fn refresh_git_diff(&mut self, buffer_id: BufferId) {
+        let Some(state) = self.buffers.get_mut(&buffer_id) else {
+            return;
+        };
+        let Some(path) = state.buffer.file_path() else {
+            state.git_diff_lines.clear();
+            return;
+        };
+        state.git_diff_lines = crate::services::git_diff::line_map_for_path(path);
     }
 
     /// Auto-save all modified buffers to their original files on disk
@@ -341,6 +355,8 @@ impl Editor {
 
         // Notify LSP that the file was changed
         self.notify_lsp_file_changed(&path);
+
+        self.refresh_git_diff(buffer_id);
 
         self.status_message = Some(t!("status.reverted").to_string());
         Ok(true)

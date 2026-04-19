@@ -118,12 +118,9 @@ impl Editor {
         );
 
         if should_check_mode_bindings {
-            // effective_mode() returns buffer-local mode if present, else global mode.
-            // This ensures virtual buffer modes aren't hijacked by global modes.
-            let effective_mode = self.effective_mode().map(|s| s.to_owned());
-
-            if let Some(ref mode_name) = effective_mode {
-                // Try to resolve as a chord (multi-key sequence like "gg")
+            // If we're in a global editor mode, handle chords and keybindings
+            if let Some(ref mode_name) = self.editor_mode {
+                // First, try to resolve as a chord (multi-key sequence like "gg")
                 if let Some(action_name) = self.mode_registry.resolve_chord_keybinding(
                     mode_name,
                     &self.chord_state,
@@ -138,11 +135,16 @@ impl Editor {
                 }
 
                 // Check if this could be the start of a chord sequence
-                if self
-                    .mode_registry
-                    .is_chord_prefix(mode_name, &self.chord_state, code, modifiers)
-                {
-                    tracing::debug!("Potential chord prefix in mode '{}'", mode_name);
+                let is_potential_chord = self.mode_registry.is_chord_prefix(
+                    mode_name,
+                    &self.chord_state,
+                    code,
+                    modifiers,
+                );
+
+                if is_potential_chord {
+                    // This could be the start of a chord - add to state and wait
+                    tracing::debug!("Potential chord prefix in editor mode");
                     self.chord_state.push((code, modifiers));
                     return Ok(());
                 }
@@ -154,49 +156,30 @@ impl Editor {
                 }
             }
 
-            // Check mode keybindings (buffer-local first, then global fallback)
+            // Check buffer mode keybindings (for virtual buffers with custom modes)
+            // Mode keybindings resolve to Action names (see Action::from_str)
             if let Some(action_name) = self.resolve_mode_keybinding(code, modifiers) {
                 let action = Action::from_str(&action_name, &std::collections::HashMap::new())
                     .unwrap_or_else(|| Action::PluginAction(action_name.clone()));
                 return self.handle_action(action);
             }
 
-            // Handle unbound keys for modes that want to capture input.
-            //
-            // Buffer-local modes with allow_text_input (e.g. search-replace-list)
-            // capture character keys and block other unbound keys.
-            //
-            // Buffer-local modes WITHOUT allow_text_input (e.g. diff-view) let
-            // unbound keys fall through to normal keybinding handling so that
-            // Ctrl+C, arrows, etc. still work.
-            //
-            // Global editor modes (e.g. vi-normal) block all unbound keys when
-            // read-only.
-            if let Some(ref mode_name) = effective_mode {
-                if self.mode_registry.allows_text_input(mode_name) {
-                    if let KeyCode::Char(c) = code {
-                        let ch = if modifiers.contains(KeyModifiers::SHIFT) {
-                            c.to_uppercase().next().unwrap_or(c)
-                        } else {
-                            c
-                        };
-                        if !modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) {
-                            let action_name = format!("mode_text_input:{}", ch);
-                            return self.handle_action(Action::PluginAction(action_name));
-                        }
-                    }
-                    tracing::debug!("Blocking unbound key in text-input mode '{}'", mode_name);
-                    return Ok(());
-                }
-            }
+            // If we're in a global editor mode, check if we should block unbound keys
             if let Some(ref mode_name) = self.editor_mode {
+                // Check if this mode is read-only
+                // read_only=true (like vi-normal): unbound keys should be ignored
+                // read_only=false (like vi-insert): unbound keys should insert characters
                 if self.mode_registry.is_read_only(mode_name) {
-                    tracing::debug!("Ignoring unbound key in read-only mode '{}'", mode_name);
+                    tracing::debug!(
+                        "Ignoring unbound key in read-only mode {:?}",
+                        self.editor_mode
+                    );
                     return Ok(());
                 }
+                // Mode is not read-only, fall through to normal key handling
                 tracing::debug!(
-                    "Mode '{}' is not read-only, allowing key through",
-                    mode_name
+                    "Mode {:?} is not read-only, allowing key through",
+                    self.editor_mode
                 );
             }
         }
@@ -2123,13 +2106,9 @@ impl Editor {
             return (0, 0);
         }
 
-        // Calculate gutter width (scales with line count: 1–9→1 digit, 10–99→2, etc.)
+        // Calculate gutter width (estimate based on line count)
         let line_count = buffer.line_count().unwrap_or(1);
-        let digits = if line_count == 0 {
-            1
-        } else {
-            (line_count as f64).log10().floor() as usize + 1
-        };
+        let digits = (line_count as f64).log10().floor() as usize + 1;
         let gutter_width = 1 + digits.max(1) + 3; // indicator + digits + separator
 
         let wrap_config = WrapConfig::new(viewport_width, gutter_width, true, true);
@@ -2196,13 +2175,9 @@ impl Editor {
             return (0, 0);
         }
 
-        // Calculate gutter width (scales with line count: 1–9→1 digit, 10–99→2, etc.)
+        // Calculate gutter width (estimate based on line count)
         let line_count = buffer.line_count().unwrap_or(1);
-        let digits = if line_count == 0 {
-            1
-        } else {
-            (line_count as f64).log10().floor() as usize + 1
-        };
+        let digits = (line_count as f64).log10().floor() as usize + 1;
         let gutter_width = 1 + digits.max(1) + 3; // indicator + digits + separator
 
         let wrap_config = WrapConfig::new(viewport_width, gutter_width, true, true);
@@ -2728,7 +2703,8 @@ impl Editor {
         self.mouse_state.dragging_text_selection = true;
         self.mouse_state.drag_selection_split = Some(split_id);
         self.mouse_state.drag_selection_anchor = Some(new_anchor.unwrap_or(target_position));
-        self.mouse_state.drag_selection_by_words = false; // Issue #1202: single-click = character-by-character
+        self.mouse_state.drag_selection_by_words = false;
+        self.mouse_state.drag_selection_by_lines = false;
 
         Ok(())
     }
